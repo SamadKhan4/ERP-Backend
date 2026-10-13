@@ -10,6 +10,7 @@ import { User } from '../models/User.js';
 import { Session } from '../models/Session.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
+import { employeeRoleFilterFor } from '../services/employeeAccessService.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid identifier');
@@ -326,7 +327,7 @@ export async function importEmployees(req, res) {
 }
 
 export async function exportEmployees(req, res) {
-  const users = await User.find({ role: { $ne: 'customer' } }).select('_id name email role department active createdAt').sort({ name: 1 }).lean();
+  const users = await User.find({ role: employeeRoleFilterFor(req.user.role) }).select('_id name email role department active createdAt').sort({ name: 1 }).lean();
   const profiles = await EmployeeProfile.find({ user: { $in: users.map((item) => item._id) } }).select('-address -emergencyContact').lean();
   const map = new Map(profiles.map((item) => [String(item.user), item]));
   res.setHeader('Content-Disposition', 'attachment; filename="employees.json"');

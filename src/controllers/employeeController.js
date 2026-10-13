@@ -11,6 +11,10 @@ import {
 } from '../validators/hrmsValidator.js';
 import { AppError } from '../utils/errors.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
+import {
+  assertEmployeeTargetAccess,
+  employeeRoleFilterFor,
+} from '../services/employeeAccessService.js';
 
 const escapeRegExp = (value) =>
   value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -70,7 +74,7 @@ export async function listEmployees(req, res) {
   if (req.user.role === 'team_leader' && !requestedDepartment)
     throw new AppError(403, 'Department required');
   const filter = {
-    role: { $ne: 'customer' },
+    role: employeeRoleFilterFor(req.user.role),
     ...(query.cursor ? { _id: { $lt: query.cursor } } : {}),
     ...(requestedDepartment ? { department: requestedDepartment } : {}),
     ...(query.active ? { active: query.active === 'true' } : {}),
@@ -122,7 +126,7 @@ export async function getEmployee(req, res) {
   ensureId(req.params.id);
   const user = await User.findOne({
     _id: req.params.id,
-    role: { $ne: 'customer' },
+    role: employeeRoleFilterFor(req.user.role),
     ...(req.user.role === 'team_leader'
       ? { department: req.user.department }
       : {}),
@@ -200,6 +204,7 @@ export async function updateEmployee(req, res) {
     role: { $ne: 'customer' },
   });
   if (!user) throw new AppError(404, 'Employee not found');
+  assertEmployeeTargetAccess(req.user.role, user.role);
   if (user.role === 'super_admin' && req.user.role !== 'super_admin')
     throw new AppError(403, 'Only a Super Admin can update this account');
   if (String(user._id) === String(req.user._id) && parsed.active === false)
@@ -283,6 +288,7 @@ export async function deactivateEmployee(req, res) {
     role: { $ne: 'customer' },
   });
   if (!existing) throw new AppError(404, 'Employee not found');
+  assertEmployeeTargetAccess(req.user.role, existing.role);
   if (existing.role === 'super_admin' && req.user.role !== 'super_admin')
     throw new AppError(403, 'Only a Super Admin can deactivate this account');
   if (

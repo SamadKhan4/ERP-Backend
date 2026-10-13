@@ -112,17 +112,41 @@ test('employee lifecycle stores a separate profile and never returns password ha
 });
 
 test('direct employee creation is blocked for HR and privileged roles cannot bypass onboarding', async () => {
-  await User.create({
+  const hrUser = await User.create({
     name: 'HR User',
     email: 'hr-user@example.test',
     passwordHash: await bcrypt.hash('HRUserPassword123', 12),
     role: 'hr',
+  });
+  const otherHr = await User.create({
+    name: 'Other HR',
+    email: 'other-hr@example.test',
+    passwordHash: await bcrypt.hash('OtherHRPassword123', 12),
+    role: 'hr',
+  });
+  const manager = await User.create({
+    name: 'Protected Manager',
+    email: 'protected-manager@example.test',
+    passwordHash: await bcrypt.hash('ManagerPassword123', 12),
+    role: 'manager',
   });
   const login = await request(app)
     .post('/api/v1/auth/login')
     .set('Origin', origin)
     .send({ email: 'hr-user@example.test', password: 'HRUserPassword123' });
   const hrToken = login.body.data.accessToken;
+  const directory = await request(app)
+    .get('/api/v1/hrms/employees')
+    .auth(hrToken, { type: 'bearer' });
+  expect(directory.status).toBe(200);
+  expect(directory.body.data.items.map((item) => item.role)).not.toContain('super_admin');
+  expect(directory.body.data.items.map((item) => item.role)).not.toContain('manager');
+  expect(directory.body.data.items.map((item) => item.role)).not.toContain('hr');
+  expect(directory.body.data.items.map((item) => item.email)).not.toContain(hrUser.email);
+  expect(directory.body.data.items.map((item) => item.email)).not.toContain(otherHr.email);
+  expect((await request(app).get(`/api/v1/hrms/employees/${manager.id}`).auth(hrToken, { type: 'bearer' })).status).toBe(404);
+  expect((await write('patch', `/employees/${manager.id}`, hrToken, { name: 'Blocked update' })).status).toBe(403);
+  expect((await write('delete', `/employees/${otherHr.id}`, hrToken)).status).toBe(403);
   const privileged = await write('post', '/employees', hrToken, {
     name: 'Unauthorized Manager',
     email: 'unauthorized-manager@example.test',

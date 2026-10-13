@@ -11,6 +11,7 @@ import {
   recordListSchema,
 } from '../validators/hrmsValidator.js';
 import { AppError } from '../utils/errors.js';
+import { employeeRoleFilterFor } from '../services/employeeAccessService.js';
 
 function definitionFor(resource) {
   const definition = hrmsResourceDefinitions[resource];
@@ -243,7 +244,7 @@ export async function dashboard(req, res) {
   rangeStart.setDate(rangeStart.getDate() - 13);
   const rangeEnd = new Date(today);
   rangeEnd.setDate(rangeEnd.getDate() + 30);
-  const employeeFilter = { role: { $nin: ['customer'] }, active: true };
+  const employeeFilter = { role: employeeRoleFilterFor(req.user.role), active: true };
 
   const [
     totalEmployees,
@@ -371,7 +372,7 @@ export async function reports(req, res) {
       { $sort: { '_id.module': 1, '_id.status': 1 } },
     ]),
     User.aggregate([
-      { $match: { active: true, role: { $ne: 'customer' } } },
+      { $match: { active: true, role: employeeRoleFilterFor(req.user.role) } },
       { $group: { _id: '$role', count: { $sum: 1 } } },
       { $sort: { count: -1 } },
     ]),
