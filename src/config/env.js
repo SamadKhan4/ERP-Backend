@@ -6,7 +6,7 @@ export const env = z
     NODE_ENV: z
       .enum(['development', 'production', 'test'])
       .default('development'),
-    HOST: z.string().default('127.0.0.1'),
+    HOST: z.string().default('0.0.0.0'),
     PORT: z.coerce.number().default(5000),
     CLIENT_URL: z.string().min(1),
     MONGO_URI: z.string().startsWith('mongodb'),
