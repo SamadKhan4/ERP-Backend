@@ -1,0 +1,46 @@
+export const roleDefinitions = [
+  { name: 'super_admin', label: 'Super Admin' },
+  { name: 'admin', label: 'Admin' },
+  { name: 'manager', label: 'Manager' },
+  { name: 'hr', label: 'HR' },
+  { name: 'executive', label: 'Executive' },
+  { name: 'team_leader', label: 'Team Leader' },
+  { name: 'employee', label: 'Employee' },
+  { name: 'customer', label: 'Customer' },
+  { name: 'lead_caller', label: 'Lead Caller' },
+];
+export const roles = roleDefinitions.map(({ name }) => name);
+
+export const rolePermissionDefaults = {
+  super_admin: ['*'],
+  admin: [
+    'dashboard.view',
+    'users.read',
+    'users.manage',
+    'hrms.read',
+    'hrms.manage',
+    'hrms.approve',
+    'hrms.payroll.read',
+    'hrms.payroll.manage',
+  ],
+  manager: [
+    'dashboard.view',
+    'users.read',
+    'hrms.read',
+    'hrms.approve',
+  ],
+  hr: [
+    'dashboard.view',
+    'users.read',
+    'users.manage',
+    'hrms.read',
+    'hrms.manage',
+    'hrms.approve',
+    'hrms.payroll.read',
+  ],
+  executive: ['dashboard.view', 'hrms.self'],
+  team_leader: ['dashboard.view', 'users.read', 'hrms.read', 'hrms.approve'],
+  employee: ['dashboard.view', 'hrms.self'],
+  customer: ['dashboard.view'],
+  lead_caller: ['dashboard.view'],
+};
