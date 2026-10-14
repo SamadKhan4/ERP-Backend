@@ -20,10 +20,11 @@ beforeAll(async () => {
   Object.assign(process.env, {
     NODE_ENV: 'test',
     MONGO_URI: database.getUri(),
-    CLIENT_URL: origin,
+    CLIENT_URL: `${origin}/,https://adborn-erp.vercel.app/`,
     JWT_ACCESS_SECRET: 'a'.repeat(64),
     JWT_REFRESH_SECRET: 'b'.repeat(64),
     COOKIE_SECURE: 'false',
+    COOKIE_SAME_SITE: 'lax',
     RESET_DELIVERY: 'file',
   });
   ({ app } = await import('../src/app.js'));
@@ -46,6 +47,23 @@ test('health reports database connection', async () => {
   const res = await request(app).get('/api/v1/health');
   expect(res.status).toBe(200);
   expect(res.body.data.database).toBe('connected');
+});
+
+test('CORS accepts configured origins with trailing slashes and rejects other origins', async () => {
+  const allowed = 'https://adborn-erp.vercel.app';
+  const preflight = await request(app)
+    .options('/api/v1/auth/refresh')
+    .set('Origin', allowed)
+    .set('Access-Control-Request-Method', 'POST');
+  expect(preflight.status).toBe(204);
+  expect(preflight.headers['access-control-allow-origin']).toBe(allowed);
+  expect(preflight.headers['access-control-allow-credentials']).toBe('true');
+  const refresh = await request(app).post('/api/v1/auth/refresh').set('Origin', allowed);
+  expect(refresh.status).toBe(401);
+  expect(refresh.headers['access-control-allow-origin']).toBe(allowed);
+  const rejected = await request(app).post('/api/v1/auth/refresh').set('Origin', 'https://untrusted.example');
+  expect(rejected.status).toBe(403);
+  expect(rejected.headers['access-control-allow-origin']).toBeUndefined();
 });
 test('departments require authentication and employee directory enforces RBAC', async () => {
   expect((await request(app).get('/api/v1/departments')).status).toBe(401);

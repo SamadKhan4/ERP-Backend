@@ -12,7 +12,7 @@ app.disable('x-powered-by');
 app.set('trust proxy', env.TRUST_PROXY);
 app.use(requestLogger);
 app.use(helmet());
-const origins = env.CLIENT_URL.split(',').map((value) => value.trim());
+const origins = env.CLIENT_URL.split(',').map((value) => new URL(value.trim()).origin);
 app.use(cors({ origin: origins, credentials: true }));
 app.use((req, res, next) => {
   if (
