@@ -45,6 +45,7 @@ function registerCrud(path, resource, { payroll = false, remove = false } = {}) 
 hrmsRouter.get('/dashboard', authorize('hrms.read'), hrms.dashboard);
 for (const section of ['summary', 'attendance-trends', 'leave-summary', 'departments', 'recent-employees', 'upcoming-birthdays', 'upcoming-leaves', 'activities'])
   hrmsRouter.get(`/dashboard/${section}`, authorize('hrms.read'), hrms.dashboard);
+hrmsRouter.get('/employee-dashboard', operations.employeeDashboard);
 
 hrmsRouter.get('/employees/export', authorize('users.read'), operations.exportEmployees);
 hrmsRouter.post('/employees/import', authorize('users.manage'), operations.importEmployees);
@@ -77,6 +78,10 @@ for (const decision of ['approve', 'reject'])
 hrmsRouter.post('/attendance/finalize', authorize('hrms.manage'), operations.finalizeAttendance);
 hrmsRouter.get('/attendance', authorize('hrms.read'), asResource('attendance', hrms.listRecords));
 hrmsRouter.get('/attendance/:id', authorize('hrms.read'), asResource('attendance', hrms.getRecord));
+hrmsRouter.post('/daily-reports', operations.createDailyReport);
+hrmsRouter.get('/daily-reports/me', operations.myDailyReports);
+hrmsRouter.get('/daily-reports', authorize('hrms.read'), asResource('daily-reports', hrms.listRecords));
+hrmsRouter.get('/daily-reports/:id', authorize('hrms.read'), asResource('daily-reports', hrms.getRecord));
 
 registerCrud('/leave-types', 'leave-types');
 registerCrud('/leave-policies', 'leave-policies');

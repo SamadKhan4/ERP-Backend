@@ -13,6 +13,7 @@ export const hrmsResourceNames = [
   'attendance',
   'attendance-regularizations',
   'attendance-periods',
+  'daily-reports',
   'leave',
   'leave-types',
   'leave-policies',

@@ -256,9 +256,21 @@ test('attendance punches and leave ledger enforce core workflow rules', async ()
   const checkIn = await write('post', '/attendance/check-in', employeeToken, {});
   expect(checkIn.status).toBe(201);
   expect((await write('post', '/attendance/check-in', employeeToken, {})).status).toBe(409);
+  const blockedCheckout = await write('post', '/attendance/check-out', employeeToken, {});
+  expect(blockedCheckout.status).toBe(409);
+  expect(blockedCheckout.body.error.message).toMatch(/daily report/i);
+  const report = await write('post', '/daily-reports', employeeToken, {
+    summary: 'Completed the employee dashboard workflow and verified attendance.',
+    completedTasks: ['Employee dashboard workflow'],
+    tomorrowPlan: 'Continue integration testing',
+  });
+  expect(report.status).toBe(201);
   const checkOut = await write('post', '/attendance/check-out', employeeToken, {});
   expect(checkOut.status).toBe(200);
   expect(checkOut.body.data.data.minutesWorked).toBeGreaterThanOrEqual(0);
+  const employeeDashboard = await request(app).get('/api/v1/hrms/employee-dashboard').auth(employeeToken, { type: 'bearer' });
+  expect(employeeDashboard.status).toBe(200);
+  expect(employeeDashboard.body.data.dailyReport.status).toBe('Submitted');
 
   const adjusted = await write('post', '/leaves/adjustments', adminToken, {
     employee: String(employee._id),
@@ -325,4 +337,8 @@ test('candidate conversion is idempotent and payroll keeps calculation snapshots
   const checkerToken = login.body.data.accessToken;
   expect((await write('post', `/payroll/runs/${runId}/approve`, checkerToken, {})).status).toBe(200);
   expect((await write('post', `/payroll/runs/${runId}/mark-paid`, checkerToken, { reference: 'PAY-2026-10' })).status).toBe(200);
+  const payslip = await request(app).get(`/api/v1/hrms/payroll/payslips/${runId}/download`).auth(employeeToken, { type: 'bearer' });
+  expect(payslip.status).toBe(200);
+  expect(payslip.headers['content-type']).toContain('application/pdf');
+  expect(payslip.headers['content-disposition']).toContain('.pdf');
 });

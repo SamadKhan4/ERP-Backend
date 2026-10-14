@@ -59,6 +59,14 @@ const resourceDataSchemas = {
   }),
   'attendance-regularizations': flexibleData,
   'attendance-periods': flexibleData,
+  'daily-reports': z.object({
+    date,
+    summary: z.string().trim().min(10).max(3000),
+    completedTasks: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+    blockers: z.string().trim().max(1000).optional(),
+    tomorrowPlan: z.string().trim().max(1000).optional(),
+    submittedAt: date,
+  }),
   leave: z.object({
     leaveType: z.enum(['annual', 'sick', 'casual', 'unpaid', 'work_from_home', 'other']),
     startDate: date,
@@ -175,6 +183,7 @@ export const hrmsResourceDefinitions = Object.fromEntries(
         'onboarding',
         'offboarding',
         'attendance',
+        'daily-reports',
         'leave',
         'timesheets',
         'salary-assignments',

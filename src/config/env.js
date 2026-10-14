@@ -1,6 +1,10 @@
 import dotenv from 'dotenv';
 import { z } from 'zod';
-dotenv.config({ path: new URL('../../.env', import.meta.url), quiet: true });
+const mode = process.env.NODE_ENV || 'development';
+dotenv.config({
+  path: new URL(`../../.env.${mode}`, import.meta.url),
+  quiet: true,
+});
 export const env = z
   .object({
     NODE_ENV: z

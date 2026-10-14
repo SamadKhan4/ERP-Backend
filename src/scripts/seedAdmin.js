@@ -15,10 +15,12 @@ const validation = z
 if (!validation.success) {
   const fields = new Set(validation.error.issues.map((issue) => issue.path[0]));
   if (fields.has('ADMIN_EMAIL'))
-    logger.error('ADMIN_EMAIL must be a valid email address in backend/.env.');
+    logger.error(
+      'ADMIN_EMAIL must be a valid email address in backend/.env.development.',
+    );
   if (fields.has('ADMIN_PASSWORD'))
     logger.error(
-      'ADMIN_PASSWORD must contain 12–128 characters, including uppercase, lowercase, and a digit, in backend/.env.',
+      'ADMIN_PASSWORD must contain 12–128 characters, including uppercase, lowercase, and a digit, in backend/.env.development.',
     );
   logger.flush();
   process.exitCode = 1;

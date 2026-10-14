@@ -22,6 +22,40 @@ const pageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 }).passthrough();
 
+const pdfText = (value) =>
+  String(value ?? '')
+    .replaceAll('\\', '\\\\')
+    .replaceAll('(', '\\(')
+    .replaceAll(')', '\\)')
+    .replace(/[^\x20-\x7E]/g, '?');
+
+function simplePdf(lines) {
+  const stream = `BT\n/F1 12 Tf\n50 790 Td\n${lines
+    .map((line, index) => `${index ? '0 -25 Td\n' : ''}(${pdfText(line)}) Tj`)
+    .join('\n')}\nET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
+  ];
+  let output = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(Buffer.byteLength(output));
+    output += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = Buffer.byteLength(output);
+  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  output += offsets
+    .slice(1)
+    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  return Buffer.from(output);
+}
+
 const startOfIndiaDay = (value = new Date()) => {
   const shifted = new Date(new Date(value).getTime() + 330 * 60000);
   shifted.setUTCHours(0, 0, 0, 0);
@@ -114,6 +148,17 @@ export async function attendanceCheckOut(req, res) {
   const earliest = new Date(startOfIndiaDay(now).getTime() - 86400000);
   const record = await HRMSRecord.findOne({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.checkIn': { $gte: earliest }, 'data.checkOut': { $exists: false } }).sort({ 'data.checkIn': -1 });
   if (!record) throw new AppError(409, 'No open attendance punch found');
+  if (['employee', 'executive'].includes(req.user.role)) {
+    const day = startOfIndiaDay(record.data.date || record.data.checkIn);
+    const report = await HRMSRecord.exists({
+      module: 'daily-reports',
+      employee: req.user.id,
+      deletedAt: null,
+      'data.date': { $gte: day, $lt: new Date(day.getTime() + 86400000) },
+    });
+    if (!report)
+      throw new AppError(409, 'Submit today’s daily report before checking out');
+  }
   const minutesWorked = Math.max(0, Math.min(1440, Math.round((now - new Date(record.data.checkIn)) / 60000)));
   record.data = { ...record.data, checkOut: now, minutesWorked };
   record.updatedBy = req.user.id;
@@ -129,6 +174,80 @@ export async function attendanceToday(req, res) {
 
 export async function myAttendance(req, res) {
   return listModule(req, res, 'attendance', { employee: req.user.id });
+}
+
+export async function createDailyReport(req, res) {
+  const input = z.object({
+    summary: z.string().trim().min(10).max(3000),
+    completedTasks: z.array(z.string().trim().min(1).max(300)).max(20).default([]),
+    blockers: z.string().trim().max(1000).optional(),
+    tomorrowPlan: z.string().trim().max(1000).optional(),
+  }).strict().parse(req.body);
+  const earliest = new Date(startOfIndiaDay().getTime() - 86400000);
+  const attendance = await HRMSRecord.findOne({
+    module: 'attendance',
+    employee: req.user.id,
+    deletedAt: null,
+    'data.checkIn': { $gte: earliest },
+    'data.checkOut': { $exists: false },
+  }).sort({ 'data.checkIn': -1 });
+  if (!attendance) throw new AppError(409, 'Check in before submitting a daily report');
+  const day = startOfIndiaDay(attendance.data.date || attendance.data.checkIn);
+  const tomorrow = new Date(day.getTime() + 86400000);
+  if (await HRMSRecord.exists({ module: 'daily-reports', employee: req.user.id, deletedAt: null, 'data.date': { $gte: day, $lt: tomorrow } }))
+    throw new AppError(409, 'Daily report already submitted for this attendance day');
+  const record = await createRecord(req, 'daily-reports', {
+    title: `Daily report · ${day.toISOString().slice(0, 10)}`,
+    employee: req.user.id,
+    department: req.user.department,
+    status: 'Submitted',
+    effectiveDate: day,
+    data: { ...input, date: day, submittedAt: new Date() },
+  });
+  res.status(201).json({ success: true, message: 'Daily report submitted successfully', data: record });
+}
+
+export async function myDailyReports(req, res) {
+  return listModule(req, res, 'daily-reports', { employee: req.user.id });
+}
+
+export async function employeeDashboard(req, res) {
+  const today = startOfIndiaDay();
+  const tomorrow = new Date(today.getTime() + 86400000);
+  const attendanceFrom = new Date(today.getTime() - 31 * 86400000);
+  const [profile, todayAttendance, dailyReport, recentAttendance, leaveBalances, holidays, payrollEntries, announcements, leaveRequests] = await Promise.all([
+    EmployeeProfile.findOne({ user: req.user.id }).select('-address -emergencyContact').lean(),
+    HRMSRecord.findOne({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.date': { $gte: today, $lt: tomorrow } }).lean(),
+    HRMSRecord.findOne({ module: 'daily-reports', employee: req.user.id, deletedAt: null, 'data.date': { $gte: today, $lt: tomorrow } }).lean(),
+    HRMSRecord.find({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.date': { $gte: attendanceFrom } }).sort({ 'data.date': -1 }).limit(31).lean(),
+    balanceFor(req.user.id),
+    HRMSRecord.find({ module: 'holidays', deletedAt: null, 'data.date': { $gte: today }, status: { $nin: ['Draft', 'Archived'] } }).sort({ 'data.date': 1 }).limit(6).lean(),
+    PayrollEntry.find({ employee: req.user.id }).populate({ path: 'run', match: { module: 'payroll-runs', deletedAt: null, status: { $in: ['Approved', 'Paid'] } }, select: 'title status data.month data.year' }).sort({ _id: -1 }).limit(6).lean(),
+    HRMSRecord.find({ module: 'announcements', deletedAt: null, status: { $in: ['Published', 'Scheduled'] } }).sort({ effectiveDate: -1, createdAt: -1 }).limit(5).lean(),
+    HRMSRecord.find({ module: 'leave', employee: req.user.id, deletedAt: null }).sort({ _id: -1 }).limit(8).lean(),
+  ]);
+  res.json({
+    success: true,
+    data: {
+      generatedAt: new Date(),
+      employee: {
+        id: req.user.id,
+        name: req.user.name,
+        email: req.user.email,
+        role: req.user.role,
+        department: req.user.department || null,
+        profile,
+      },
+      todayAttendance,
+      dailyReport,
+      recentAttendance,
+      leaveBalances,
+      upcomingHolidays: holidays,
+      payslips: payrollEntries.filter((entry) => entry.run).map((entry) => ({ payrollRun: entry.run, entry })),
+      announcements,
+      leaveRequests,
+    },
+  });
 }
 
 export async function attendanceSummary(req, res) {
@@ -407,8 +526,20 @@ export async function downloadPayslip(req, res) {
   if (String(employee) !== String(req.user.id) && !['super_admin', 'admin', 'hr'].includes(req.user.role)) throw new AppError(403, 'Payslip access denied');
   const entry = await PayrollEntry.findOne({ run: run._id, employee }).lean();
   if (!entry) throw new AppError(404, 'Payslip not found');
-  res.setHeader('Content-Disposition', `attachment; filename="payslip-${run.data.year}-${run.data.month}.json"`);
-  res.json({ success: true, message: 'Payslip generated successfully', data: { run: run.title, status: run.status, ...entry } });
+  const pdf = simplePdf([
+    'AdBorn ERP - Salary Payslip',
+    `Payroll period: ${run.title}`,
+    `Employee: ${entry.employeeName}`,
+    `Department: ${entry.department || 'Not assigned'}`,
+    `Gross salary: INR ${Number(entry.gross).toFixed(2)}`,
+    `Deductions: INR ${Number(entry.deductions).toFixed(2)}`,
+    `Net salary: INR ${Number(entry.net).toFixed(2)}`,
+    `Payment status: ${run.status}`,
+    `Generated: ${new Date().toISOString()}`,
+  ]);
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="payslip-${run.data.year}-${run.data.month}.pdf"`);
+  res.send(pdf);
 }
 
 export async function convertCandidate(req, res) {
