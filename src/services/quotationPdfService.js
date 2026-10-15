@@ -11,7 +11,7 @@ const ink = '#17191c';
 const companyParty = {
   company: 'AdBorn Solutions',
   contactPerson: 'Team AdBorn Solutions',
-  contactNumber: '+91 1729703783',
+  contactNumber: '+91 7488049134',
   email: 'info@adbornsolutions.com',
 };
 const money = (value) => Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 });
@@ -66,7 +66,7 @@ function drawPageChrome(doc, quotation, pageNumber, pageCount) {
   }
   doc.fillColor('#7d8b97').font('Helvetica').fontSize(6.5).text(`PAGE ${pageNumber} / ${pageCount}`, 470, 798, { width: 70, align: 'right' });
   doc.rect(0, 816, 562, 26).fill(navy);
-  doc.fillColor('#fff').font('Helvetica').fontSize(7.5).text('+91 1729703783', 22, 826, { lineBreak: false });
+  doc.fillColor('#fff').font('Helvetica').fontSize(7.5).text('+91 7488049134', 22, 826, { lineBreak: false });
   doc.text('info@adbornsolutions.com', 135, 826, { lineBreak: false });
   doc.text('adbornsolutions.com', 300, 826, { lineBreak: false });
   doc.text('Nagpur, Maharashtra, India', 420, 826, { lineBreak: false });

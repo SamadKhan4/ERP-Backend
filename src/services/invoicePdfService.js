@@ -102,7 +102,7 @@ export function streamInvoicePdf(res, invoice) {
   doc.fillColor('#333').font('Helvetica').fontSize(8).text('Authorized Signatory', 39, 760);
   doc.fillColor(ink).font('Helvetica-Bold').fontSize(11).text('AdBorn Solutions', 34, 777);
   doc.rect(0, 816, 562, 26).fill(navy);
-  doc.fillColor('#fff').font('Helvetica').fontSize(7.5).text('+91 1729703783', 22, 826, { lineBreak: false });
+  doc.fillColor('#fff').font('Helvetica').fontSize(7.5).text('+91 7488049134', 22, 826, { lineBreak: false });
   doc.text('info@adbornsolutions.com', 135, 826, { lineBreak: false });
   doc.text('adbornsolutions.com', 300, 826, { lineBreak: false });
   doc.text('Nagpur, Maharashtra, India', 420, 826, { lineBreak: false });

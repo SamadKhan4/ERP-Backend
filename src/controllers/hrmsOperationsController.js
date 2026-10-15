@@ -12,6 +12,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
 import { employeeRoleFilterFor } from '../services/employeeAccessService.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
+import { attendancePerformance } from '../services/attendanceStatusService.js';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid identifier');
 const date = z.coerce.date();
@@ -137,7 +138,7 @@ export async function attendanceCheckIn(req, res) {
   const record = await createRecord(req, 'attendance', {
     title: 'Daily attendance', employee: req.user.id, department: req.user.department,
     status: 'Present', effectiveDate: day,
-    data: { date: day, checkIn: now, note: input.note },
+    data: { date: day, checkIn: now, attendanceStatus: attendancePerformance({ checkIn: now }), note: input.note },
   });
   res.status(201).json({ success: true, message: 'Checked in successfully', data: record });
 }
@@ -160,7 +161,7 @@ export async function attendanceCheckOut(req, res) {
       throw new AppError(409, 'Submit today’s daily report before checking out');
   }
   const minutesWorked = Math.max(0, Math.min(1440, Math.round((now - new Date(record.data.checkIn)) / 60000)));
-  record.data = { ...record.data, checkOut: now, minutesWorked };
+  record.data = { ...record.data, checkOut: now, minutesWorked, attendanceStatus: attendancePerformance({ checkIn: record.data.checkIn, checkOut: now }) };
   record.updatedBy = req.user.id;
   await record.save();
   await audit(req, 'hrms.attendance.checked_out', record, { minutesWorked });
@@ -170,6 +171,31 @@ export async function attendanceCheckOut(req, res) {
 export async function attendanceToday(req, res) {
   const day = startOfIndiaDay();
   return listModule(req, res, 'attendance', { 'data.date': { $gte: day, $lt: new Date(day.getTime() + 86400000) } });
+}
+
+export async function attendanceDaily(req, res) {
+  const input = z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }).strict().parse(req.query);
+  const day = startOfIndiaDay(`${input.date}T00:00:00+05:30`);
+  const tomorrow = new Date(day.getTime() + 86400000);
+  const filter = {
+    module: 'attendance',
+    deletedAt: null,
+    'data.date': { $gte: day, $lt: tomorrow },
+    ...(req.user.role === 'team_leader' ? { department: req.user.department } : {}),
+  };
+  const records = await HRMSRecord.find(filter)
+    .populate('employee', 'name email role department active')
+    .sort({ 'data.checkIn': 1 })
+    .lean();
+  const items = records.map((record) => ({
+    ...record,
+    attendanceStatus: attendancePerformance({ checkIn: record.data?.checkIn, checkOut: record.data?.checkOut }),
+  }));
+  const summary = items.reduce((result, item) => {
+    result[item.attendanceStatus] = (result[item.attendanceStatus] || 0) + 1;
+    return result;
+  }, { 'On Time': 0, Late: 0, 'Half Day': 0 });
+  res.json({ success: true, message: 'Daily attendance fetched successfully', data: { date: input.date, items, summary, total: items.length } });
 }
 
 export async function myAttendance(req, res) {

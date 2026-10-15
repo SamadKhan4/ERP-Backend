@@ -68,6 +68,7 @@ registerCrud('/designations', 'designations', { remove: true });
 hrmsRouter.post('/attendance/check-in', operations.attendanceCheckIn);
 hrmsRouter.post('/attendance/check-out', operations.attendanceCheckOut);
 hrmsRouter.get('/attendance/today', authorize('hrms.read'), operations.attendanceToday);
+hrmsRouter.get('/attendance/daily', authorize('hrms.read'), operations.attendanceDaily);
 hrmsRouter.get('/attendance/me', operations.myAttendance);
 hrmsRouter.get('/attendance/calendar', authorize('hrms.read'), asResource('attendance', hrms.listRecords));
 hrmsRouter.get('/attendance/summary', authorize('hrms.read'), operations.attendanceSummary);

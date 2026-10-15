@@ -268,6 +268,14 @@ test('attendance punches and leave ledger enforce core workflow rules', async ()
   const checkOut = await write('post', '/attendance/check-out', employeeToken, {});
   expect(checkOut.status).toBe(200);
   expect(checkOut.body.data.data.minutesWorked).toBeGreaterThanOrEqual(0);
+  expect(['On Time', 'Late', 'Half Day']).toContain(checkOut.body.data.data.attendanceStatus);
+  const attendanceParts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(checkOut.body.data.data.date));
+  const attendancePart = (type) => attendanceParts.find((item) => item.type === type).value;
+  const attendanceDate = `${attendancePart('year')}-${attendancePart('month')}-${attendancePart('day')}`;
+  const dailyAttendance = await request(app).get(`/api/v1/hrms/attendance/daily?date=${attendanceDate}`).auth(adminToken, { type: 'bearer' });
+  expect(dailyAttendance.status).toBe(200);
+  expect(dailyAttendance.body.data.items).toHaveLength(1);
+  expect(dailyAttendance.body.data.items[0].employee.name).toBe('Riya Shah');
   const employeeDashboard = await request(app).get('/api/v1/hrms/employee-dashboard').auth(employeeToken, { type: 'bearer' });
   expect(employeeDashboard.status).toBe(200);
   expect(employeeDashboard.body.data.dailyReport.status).toBe('Submitted');
