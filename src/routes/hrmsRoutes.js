@@ -92,7 +92,7 @@ hrmsRouter.post('/leaves/requests', operations.createLeaveRequest);
 hrmsRouter.get('/leaves/requests', authorize('hrms.read'), asResource('leave', hrms.listRecords));
 hrmsRouter.get('/leaves/requests/:id', authorize('hrms.read'), asResource('leave', hrms.getRecord));
 hrmsRouter.patch('/leaves/requests/:id/cancel', operations.cancelLeave);
-for (const decision of ['approve', 'reject'])
+for (const decision of ['approve', 'pending', 'reject'])
   hrmsRouter.patch(`/leaves/requests/:id/${decision}`, authorize('hrms.approve'), withParams({ decision }, operations.reviewLeave));
 hrmsRouter.post('/leaves/adjustments', authorize('hrms.manage'), operations.adjustLeave);
 hrmsRouter.get('/leaves/calendar', authorize('hrms.read'), asResource('leave', hrms.listRecords));
@@ -102,6 +102,9 @@ hrmsRouter.post('/employees/:id/salary-assignments', authorize('hrms.payroll.man
 hrmsRouter.get('/employees/:id/salary-history', authorize('hrms.payroll.read'), operations.salaryHistory);
 registerCrud('/salary-revisions', 'salary-revisions', { payroll: true });
 hrmsRouter.patch('/salary-revisions/:id/approve', authorize('hrms.payroll.manage'), withParams({ recordModule: 'salary-revisions', operation: 'approve' }, operations.recordTransition));
+hrmsRouter.get('/payroll/employee-calculation', authorize('hrms.payroll.manage'), operations.previewEmployeePayroll);
+hrmsRouter.get('/payroll/employee-payslips', authorize('hrms.payroll.read'), operations.listEmployeePayslips);
+hrmsRouter.post('/payroll/employee-payslips', authorize('hrms.payroll.manage'), operations.publishEmployeePayslip);
 hrmsRouter.post('/payroll/runs', authorize('hrms.payroll.manage'), operations.createPayrollRun);
 hrmsRouter.get('/payroll/runs', authorize('hrms.payroll.read'), asResource('payroll-runs', hrms.listRecords));
 hrmsRouter.get('/payroll/runs/:id', authorize('hrms.payroll.read'), asResource('payroll-runs', hrms.getRecord));
@@ -115,6 +118,7 @@ hrmsRouter.get('/payroll/reports', authorize('hrms.payroll.read'), withParams({ 
 
 registerCrud('/shifts/assignments', 'shift-assignments');
 registerCrud('/shifts', 'shifts', { remove: true });
+hrmsRouter.get('/holidays/calendar-view', authorize('hrms.read'), operations.holidayCalendar);
 registerCrud('/holidays', 'holidays', { remove: true });
 hrmsRouter.get('/timesheets/summary', authorize('hrms.read'), withParams({ recordModule: 'timesheets' }, operations.moduleReport));
 registerCrud('/timesheets', 'timesheets');

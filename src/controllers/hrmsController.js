@@ -106,6 +106,7 @@ async function enforceUniqueBusinessKeys(resource, parsed, excludeId) {
   let key;
   if (resource === 'settings') key = { 'data.key': parsed.data.key };
   if (resource === 'assets') key = { 'data.assetCode': parsed.data.assetCode };
+  if (resource === 'holidays') key = { 'data.date': parsed.data.date };
   if (!key) return;
   const exists = await HRMSRecord.exists({
     module: resource,
@@ -118,7 +119,9 @@ async function enforceUniqueBusinessKeys(resource, parsed, excludeId) {
       409,
       resource === 'settings'
         ? 'Setting key already exists'
-        : 'Asset code already exists',
+        : resource === 'holidays'
+          ? 'A holiday is already assigned to this date'
+          : 'Asset code already exists',
     );
 }
 

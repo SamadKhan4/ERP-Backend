@@ -11,6 +11,7 @@ import { hrmsRouter } from './hrmsRoutes.js';
 import * as userManagement from '../controllers/userManagementController.js';
 import * as quotations from '../controllers/quotationController.js';
 import * as invoices from '../controllers/invoiceController.js';
+import * as notifications from '../controllers/notificationController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -52,6 +53,9 @@ authRouter.post('/forgot-password', auth.forgotPassword);
 authRouter.post('/reset-password', auth.resetPassword);
 router.use('/auth', authRouter);
 router.use('/hrms', hrmsRouter);
+router.get('/notifications', authenticate, notifications.listNotifications);
+router.patch('/notifications/read-all', authenticate, notifications.markAllNotificationsRead);
+router.patch('/notifications/:id/read', authenticate, notifications.markNotificationRead);
 router.get('/quotations', authenticate, authorize('quotations.read'), quotations.listQuotations);
 router.post('/quotations', authenticate, authorize('quotations.manage'), quotations.createQuotation);
 router.get('/quotations/:id/download', authenticate, authorize('quotations.read'), quotations.downloadQuotation);

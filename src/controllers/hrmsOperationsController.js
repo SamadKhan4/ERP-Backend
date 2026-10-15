@@ -13,6 +13,8 @@ import { AppError } from '../utils/errors.js';
 import { employeeRoleFilterFor } from '../services/employeeAccessService.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
 import { attendancePerformance } from '../services/attendanceStatusService.js';
+import { notifyLeaveDecision, notifyLeaveReviewers, notifyPayrollPublished } from '../services/notificationService.js';
+import { streamPayslipPdf } from '../services/payslipPdfService.js';
 
 const objectId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid identifier');
 const date = z.coerce.date();
@@ -23,40 +25,6 @@ const pageSchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(20),
 }).passthrough();
 
-const pdfText = (value) =>
-  String(value ?? '')
-    .replaceAll('\\', '\\\\')
-    .replaceAll('(', '\\(')
-    .replaceAll(')', '\\)')
-    .replace(/[^\x20-\x7E]/g, '?');
-
-function simplePdf(lines) {
-  const stream = `BT\n/F1 12 Tf\n50 790 Td\n${lines
-    .map((line, index) => `${index ? '0 -25 Td\n' : ''}(${pdfText(line)}) Tj`)
-    .join('\n')}\nET`;
-  const objects = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
-    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    `<< /Length ${Buffer.byteLength(stream)} >>\nstream\n${stream}\nendstream`,
-  ];
-  let output = '%PDF-1.4\n';
-  const offsets = [0];
-  objects.forEach((object, index) => {
-    offsets.push(Buffer.byteLength(output));
-    output += `${index + 1} 0 obj\n${object}\nendobj\n`;
-  });
-  const xref = Buffer.byteLength(output);
-  output += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  output += offsets
-    .slice(1)
-    .map((offset) => `${String(offset).padStart(10, '0')} 00000 n \n`)
-    .join('');
-  output += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return Buffer.from(output);
-}
-
 const startOfIndiaDay = (value = new Date()) => {
   const shifted = new Date(new Date(value).getTime() + 330 * 60000);
   shifted.setUTCHours(0, 0, 0, 0);
@@ -65,6 +33,10 @@ const startOfIndiaDay = (value = new Date()) => {
 
 const daysInclusive = (start, end) =>
   Math.floor((startOfIndiaDay(end) - startOfIndiaDay(start)) / 86400000) + 1;
+
+const newestPayrollPeriod = (left, right) =>
+  (Number(right.run?.data?.year || 0) - Number(left.run?.data?.year || 0)) ||
+  (Number(right.run?.data?.month || 0) - Number(left.run?.data?.month || 0));
 
 function ensureId(value, label = 'identifier') {
   if (!mongoose.isValidObjectId(value)) throw new AppError(400, `Invalid ${label}`);
@@ -189,12 +161,12 @@ export async function attendanceDaily(req, res) {
     .lean();
   const items = records.map((record) => ({
     ...record,
-    attendanceStatus: attendancePerformance({ checkIn: record.data?.checkIn, checkOut: record.data?.checkOut }),
+    attendanceStatus: record.data?.attendanceStatus || attendancePerformance({ checkIn: record.data?.checkIn, checkOut: record.data?.checkOut }),
   }));
   const summary = items.reduce((result, item) => {
     result[item.attendanceStatus] = (result[item.attendanceStatus] || 0) + 1;
     return result;
-  }, { 'On Time': 0, Late: 0, 'Half Day': 0 });
+  }, { 'On Time': 0, Late: 0, 'Half Day': 0, 'On Leave': 0 });
   res.json({ success: true, message: 'Daily attendance fetched successfully', data: { date: input.date, items, summary, total: items.length } });
 }
 
@@ -241,16 +213,21 @@ export async function employeeDashboard(req, res) {
   const today = startOfIndiaDay();
   const tomorrow = new Date(today.getTime() + 86400000);
   const attendanceFrom = new Date(today.getTime() - 31 * 86400000);
-  const [profile, todayAttendance, dailyReport, recentAttendance, leaveBalances, holidays, payrollEntries, announcements, leaveRequests] = await Promise.all([
-    EmployeeProfile.findOne({ user: req.user.id }).select('-address -emergencyContact').lean(),
+  const yearStart = new Date(Date.UTC(today.getUTCFullYear(), 0, 1));
+  const yearEnd = new Date(Date.UTC(today.getUTCFullYear() + 1, 0, 1));
+  const [profile, todayAttendance, dailyReport, dailyReports, recentAttendance, leaveBalances, holidays, payrollEntries, announcements, leaveRequests, assets, onboarding] = await Promise.all([
+    EmployeeProfile.findOne({ user: req.user.id }).lean(),
     HRMSRecord.findOne({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.date': { $gte: today, $lt: tomorrow } }).lean(),
     HRMSRecord.findOne({ module: 'daily-reports', employee: req.user.id, deletedAt: null, 'data.date': { $gte: today, $lt: tomorrow } }).lean(),
+    HRMSRecord.find({ module: 'daily-reports', employee: req.user.id, deletedAt: null }).sort({ 'data.date': -1, _id: -1 }).limit(30).lean(),
     HRMSRecord.find({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.date': { $gte: attendanceFrom } }).sort({ 'data.date': -1 }).limit(31).lean(),
     balanceFor(req.user.id),
-    HRMSRecord.find({ module: 'holidays', deletedAt: null, 'data.date': { $gte: today }, status: { $nin: ['Draft', 'Archived'] } }).sort({ 'data.date': 1 }).limit(6).lean(),
-    PayrollEntry.find({ employee: req.user.id }).populate({ path: 'run', match: { module: 'payroll-runs', deletedAt: null, status: { $in: ['Approved', 'Paid'] } }, select: 'title status data.month data.year' }).sort({ _id: -1 }).limit(6).lean(),
-    HRMSRecord.find({ module: 'announcements', deletedAt: null, status: { $in: ['Published', 'Scheduled'] } }).sort({ effectiveDate: -1, createdAt: -1 }).limit(5).lean(),
-    HRMSRecord.find({ module: 'leave', employee: req.user.id, deletedAt: null }).sort({ _id: -1 }).limit(8).lean(),
+    HRMSRecord.find({ module: 'holidays', deletedAt: null, 'data.date': { $gte: yearStart, $lt: yearEnd }, status: { $nin: ['Draft', 'Archived'] } }).sort({ 'data.date': 1 }).lean(),
+    PayrollEntry.find({ employee: req.user.id }).populate({ path: 'run', match: { module: 'payroll-runs', deletedAt: null, status: { $in: ['Approved', 'Paid'] } }, select: 'title status data.month data.year' }).sort({ _id: -1 }).limit(60).lean(),
+    HRMSRecord.find({ module: 'announcements', deletedAt: null, status: { $in: ['Published', 'Scheduled'] } }).sort({ effectiveDate: -1, createdAt: -1 }).limit(20).lean(),
+    HRMSRecord.find({ module: 'leave', employee: req.user.id, deletedAt: null }).sort({ _id: -1 }).limit(50).lean(),
+    HRMSRecord.find({ module: 'assets', employee: req.user.id, deletedAt: null }).sort({ _id: -1 }).lean(),
+    HRMSRecord.findOne({ module: 'onboarding', employee: req.user.id, deletedAt: null }).sort({ _id: -1 }).lean(),
   ]);
   res.json({
     success: true,
@@ -266,12 +243,16 @@ export async function employeeDashboard(req, res) {
       },
       todayAttendance,
       dailyReport,
+      dailyReports,
       recentAttendance,
       leaveBalances,
-      upcomingHolidays: holidays,
-      payslips: payrollEntries.filter((entry) => entry.run).map((entry) => ({ payrollRun: entry.run, entry })),
+      holidays,
+      upcomingHolidays: holidays.filter((holiday) => new Date(holiday.data?.date) >= today).slice(0, 6),
+      payslips: payrollEntries.filter((entry) => entry.run).sort(newestPayrollPeriod).slice(0, 12).map((entry) => ({ payrollRun: entry.run, entry })),
       announcements,
       leaveRequests,
+      assets,
+      tasks: onboarding?.data?.tasks || [],
     },
   });
 }
@@ -342,14 +323,17 @@ export async function createLeaveRequest(req, res) {
   const overlap = await HRMSRecord.exists({ module: 'leave', employee, deletedAt: null, status: { $in: ['Pending', 'Approved'] }, 'data.startDate': { $lte: input.endDate }, 'data.endDate': { $gte: input.startDate } });
   if (overlap) throw new AppError(409, 'Leave overlaps an existing request');
   const record = await createRecord(req, 'leave', { title: input.title || `${input.leaveType} leave`, employee, department: req.user.department, status: 'Pending', effectiveDate: input.startDate, data: input });
+  await notifyLeaveReviewers({ employee: req.user, record });
   res.status(201).json({ success: true, message: 'Leave requested successfully', data: record });
 }
 
 export async function reviewLeave(req, res) {
   const input = z.object({ reason: z.string().trim().max(1000).optional() }).strict().parse(req.body || {});
   const record = await findRecord(req.params.id, 'leave');
+  const decision = z.enum(['approve', 'pending', 'reject']).parse(req.params.decision);
   if (record.status !== 'Pending') throw new AppError(409, 'Leave request has already been reviewed');
-  const approved = req.params.decision === 'approve';
+  if (decision === 'reject' && !input.reason) throw new AppError(400, 'Rejection reason is required');
+  const approved = decision === 'approve';
   if (approved) {
     const days = daysInclusive(record.data.startDate, record.data.endDate);
     const balances = await balanceFor(record.employee, record.data.leaveType);
@@ -357,12 +341,16 @@ export async function reviewLeave(req, res) {
     if (record.data.leaveType !== 'unpaid' && balance < days) throw new AppError(409, 'Insufficient leave balance');
     await LeaveLedger.create({ employee: record.employee, leaveType: record.data.leaveType, amount: -days, reason: 'approved_leave', request: record._id, createdBy: req.user.id });
   }
-  record.status = approved ? 'Approved' : 'Rejected';
+  record.status = approved ? 'Approved' : decision === 'reject' ? 'Rejected' : 'Pending';
   record.data = { ...record.data, reviewerNote: input.reason, reviewedAt: new Date(), reviewedBy: req.user.id };
   record.updatedBy = req.user.id;
   await record.save();
-  await audit(req, `hrms.leave.${req.params.decision}d`, record);
-  res.json({ success: true, message: `Leave ${record.status.toLowerCase()} successfully`, data: record });
+  await Promise.all([
+    audit(req, `hrms.leave.${decision}`, record),
+    notifyLeaveDecision({ record, reviewer: req.user, decision, reason: input.reason }),
+  ]);
+  const message = decision === 'pending' ? 'Leave kept pending successfully' : `Leave ${record.status.toLowerCase()} successfully`;
+  res.json({ success: true, message, data: record });
 }
 
 export async function cancelLeave(req, res) {
@@ -487,6 +475,174 @@ export async function createPayrollRun(req, res) {
   res.status(201).json({ success: true, message: 'Payroll run created successfully', data: record });
 }
 
+const employeePayrollSchema = z.object({
+  employeeId: objectId,
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Month must use YYYY-MM format'),
+  baseAmount: z.coerce.number().positive().max(100000000),
+}).strict();
+
+const moneyRound = (value) => Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+const professionalTaxFor = (monthlySalary) => (Number(monthlySalary) > 10000 ? 200 : 0);
+
+async function employeePayrollCalculation(input) {
+  const employee = await User.findOne({ _id: input.employeeId, active: true, role: { $nin: ['customer'] } }).select('_id name email department role').lean();
+  if (!employee) throw new AppError(404, 'Employee not found');
+  const [year, month] = input.month.split('-').map(Number);
+  const periodStart = new Date(Date.UTC(year, month - 1, 1));
+  const periodEnd = new Date(Date.UTC(year, month, 1));
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const leaves = await HRMSRecord.find({
+    module: 'leave',
+    employee: employee._id,
+    status: 'Approved',
+    deletedAt: null,
+    'data.startDate': { $lt: periodEnd },
+    'data.endDate': { $gte: periodStart },
+  }).select('data.leaveType data.startDate data.endDate').lean();
+  const breakdown = new Map();
+  for (const leave of leaves) {
+    const from = new Date(Math.max(new Date(leave.data.startDate).getTime(), periodStart.getTime()));
+    const until = new Date(Math.min(new Date(leave.data.endDate).getTime(), periodEnd.getTime() - 86400000));
+    const days = Math.max(0, Math.floor((until - from) / 86400000) + 1);
+    const type = leave.data.leaveType || 'other';
+    breakdown.set(type, (breakdown.get(type) || 0) + days);
+  }
+  const leaveBreakdown = [...breakdown.entries()].map(([leaveType, days]) => ({ leaveType, days }));
+  const totalLeaveDays = leaveBreakdown.reduce((sum, item) => sum + item.days, 0);
+  const unpaidLeaveDays = breakdown.get('unpaid') || 0;
+  const deductibleLeaveDays = totalLeaveDays;
+  const perDayAmount = moneyRound(input.baseAmount / daysInMonth);
+  const leaveDeduction = moneyRound(perDayAmount * deductibleLeaveDays);
+  const professionalTax = professionalTaxFor(input.baseAmount);
+  const autoPayableAmount = moneyRound(Math.max(0, input.baseAmount - leaveDeduction - professionalTax));
+  return {
+    employee,
+    month: input.month,
+    year,
+    monthNumber: month,
+    daysInMonth,
+    baseAmount: moneyRound(input.baseAmount),
+    perDayAmount,
+    totalLeaveDays,
+    unpaidLeaveDays,
+    paidLeaveDays: Math.max(0, totalLeaveDays - unpaidLeaveDays),
+    deductibleLeaveDays,
+    leaveDeduction,
+    professionalTax,
+    autoPayableAmount,
+    leaveBreakdown,
+  };
+}
+
+export async function previewEmployeePayroll(req, res) {
+  const input = employeePayrollSchema.parse(req.query);
+  res.json({ success: true, message: 'Employee payroll calculated successfully', data: await employeePayrollCalculation(input) });
+}
+
+export async function publishEmployeePayslip(req, res) {
+  const input = employeePayrollSchema.extend({
+    payableAmount: z.number().min(0).max(100000000),
+    manualOverride: z.boolean().default(false),
+    note: z.string().trim().max(1000).optional(),
+  }).parse(req.body);
+  const calculation = await employeePayrollCalculation(input);
+  const payableAmount = input.manualOverride
+    ? moneyRound(input.payableAmount)
+    : calculation.autoPayableAmount;
+  let run = await HRMSRecord.findOne({
+    module: 'payroll-runs',
+    deletedAt: null,
+    'data.mode': 'employee_manual',
+    'data.employeeId': input.employeeId,
+    'data.month': calculation.monthNumber,
+    'data.year': calculation.year,
+  });
+  const existed = Boolean(run);
+  if (run?.status === 'Paid') throw new AppError(409, 'Paid salary slips are locked');
+  const monthLabel = new Date(Date.UTC(calculation.year, calculation.monthNumber - 1, 1)).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const runData = {
+    mode: 'employee_manual',
+    employeeId: input.employeeId,
+    month: calculation.monthNumber,
+    year: calculation.year,
+    currency: 'INR',
+    employeeCount: 1,
+    grossAmount: calculation.baseAmount,
+    netAmount: payableAmount,
+    calculatedAt: new Date(),
+    calculatedBy: req.user.id,
+    approvedAt: new Date(),
+    approvedBy: req.user.id,
+  };
+  if (!run) {
+    run = await createRecord(req, 'payroll-runs', {
+      title: `${calculation.employee.name} - ${monthLabel} Salary`,
+      employee: calculation.employee._id,
+      department: calculation.employee.department,
+      status: 'Approved',
+      effectiveDate: new Date(Date.UTC(calculation.year, calculation.monthNumber - 1, 1)),
+      data: runData,
+    });
+  } else {
+    run.title = `${calculation.employee.name} - ${monthLabel} Salary`;
+    run.employee = calculation.employee._id;
+    run.department = calculation.employee.department;
+    run.status = 'Approved';
+    run.effectiveDate = new Date(Date.UTC(calculation.year, calculation.monthNumber - 1, 1));
+    run.data = runData;
+    run.updatedBy = req.user.id;
+    await run.save();
+  }
+  const entry = await PayrollEntry.findOneAndUpdate(
+    { run: run._id, employee: calculation.employee._id },
+    {
+      $set: {
+        employeeName: calculation.employee.name,
+        department: calculation.employee.department,
+        gross: calculation.baseAmount,
+        deductions: moneyRound(Math.max(0, calculation.baseAmount - payableAmount)),
+        net: payableAmount,
+        currency: 'INR',
+        snapshot: {
+          mode: 'employee_manual',
+          month: input.month,
+          daysInMonth: calculation.daysInMonth,
+          totalLeaveDays: calculation.totalLeaveDays,
+          paidLeaveDays: calculation.paidLeaveDays,
+          unpaidLeaveDays: calculation.unpaidLeaveDays,
+          deductibleLeaveDays: calculation.deductibleLeaveDays,
+          leaveBreakdown: calculation.leaveBreakdown,
+          perDayAmount: calculation.perDayAmount,
+          leaveDeduction: calculation.leaveDeduction,
+          professionalTax: calculation.professionalTax,
+          autoPayableAmount: calculation.autoPayableAmount,
+          manualAdjustment: moneyRound(payableAmount - calculation.autoPayableAmount),
+          note: input.note,
+        },
+      },
+      $setOnInsert: { run: run._id, employee: calculation.employee._id },
+    },
+    { new: true, upsert: true, runValidators: true },
+  );
+  await Promise.all([
+    audit(req, existed ? 'hrms.payroll.employee_payslip_updated' : 'hrms.payroll.employee_payslip_published', run, { employee: input.employeeId, net: payableAmount }),
+    notifyPayrollPublished({ employee: calculation.employee, run, entry, publisher: req.user }),
+  ]);
+  res.status(existed ? 200 : 201).json({ success: true, message: `Salary slip ${existed ? 'updated' : 'published'} successfully`, data: { payrollRun: run, entry, calculation } });
+}
+
+export async function listEmployeePayslips(req, res) {
+  const { page, limit } = pageSchema.parse(req.query);
+  const filter = { module: 'payroll-runs', deletedAt: null, 'data.mode': 'employee_manual' };
+  const [runs, total] = await Promise.all([
+    HRMSRecord.find(filter).populate('employee', 'name email department active').sort({ effectiveDate: -1, _id: -1 }).skip((page - 1) * limit).limit(limit).lean(),
+    HRMSRecord.countDocuments(filter),
+  ]);
+  const entries = await PayrollEntry.find({ run: { $in: runs.map((item) => item._id) } }).lean();
+  const entryByRun = new Map(entries.map((entry) => [String(entry.run), entry]));
+  paginated(res, runs.map((payrollRun) => ({ payrollRun, entry: entryByRun.get(String(payrollRun._id)) })).filter((item) => item.entry), page, limit, total, 'Employee payslips fetched successfully');
+}
+
 export async function calculatePayroll(req, res) {
   const run = await findRecord(req.params.id, 'payroll-runs');
   if (!['Draft', 'Calculated'].includes(run.status)) throw new AppError(409, 'Payroll run is locked');
@@ -497,8 +653,13 @@ export async function calculatePayroll(req, res) {
   const entries = employees.map((employee) => {
     const salary = latest.get(String(employee._id));
     const gross = salary ? Math.round(salary.data.annualCTC / 12) : 0;
-    const deductions = (salary?.data.components || []).filter((c) => c.type === 'deduction').reduce((sum, c) => sum + c.amount, 0);
-    return { run: run._id, employee: employee._id, employeeName: employee.name, department: employee.department, salaryAssignment: salary?._id, gross, deductions, net: Math.max(0, gross - deductions), currency: 'INR', snapshot: { salaryVersion: salary?.data?.version, components: salary?.data?.components || [] } };
+    const components = salary?.data.components || [];
+    const componentDeductions = components
+      .filter((component) => component.type === 'deduction' && !/^(professional\s*tax|pt)$/i.test(String(component.name || '').trim()))
+      .reduce((sum, component) => sum + component.amount, 0);
+    const professionalTax = professionalTaxFor(gross);
+    const deductions = moneyRound(componentDeductions + professionalTax);
+    return { run: run._id, employee: employee._id, employeeName: employee.name, department: employee.department, salaryAssignment: salary?._id, gross, deductions, net: Math.max(0, gross - deductions), currency: 'INR', snapshot: { salaryVersion: salary?.data?.version, components, professionalTax } };
   });
   await PayrollEntry.deleteMany({ run: run._id });
   if (entries.length) await PayrollEntry.insertMany(entries);
@@ -542,7 +703,7 @@ export async function payrollEntries(req, res) {
 
 export async function myPayslips(req, res) {
   const entries = await PayrollEntry.find({ employee: req.user.id }).populate({ path: 'run', match: { module: 'payroll-runs', deletedAt: null, status: { $in: ['Approved', 'Paid'] } }, select: 'title status data.month data.year' }).sort({ _id: -1 }).lean();
-  const items = entries.filter((item) => item.run).map((entry) => ({ payrollRun: entry.run, entry }));
+  const items = entries.filter((item) => item.run).sort(newestPayrollPeriod).map((entry) => ({ payrollRun: entry.run, entry }));
   paginated(res, items, 1, items.length || 20, items.length, 'Payslips fetched successfully');
 }
 
@@ -550,22 +711,15 @@ export async function downloadPayslip(req, res) {
   const run = await findRecord(req.params.id, 'payroll-runs');
   const employee = req.query.employee || req.user.id;
   if (String(employee) !== String(req.user.id) && !['super_admin', 'admin', 'hr'].includes(req.user.role)) throw new AppError(403, 'Payslip access denied');
-  const entry = await PayrollEntry.findOne({ run: run._id, employee }).lean();
-  if (!entry) throw new AppError(404, 'Payslip not found');
-  const pdf = simplePdf([
-    'AdBorn ERP - Salary Payslip',
-    `Payroll period: ${run.title}`,
-    `Employee: ${entry.employeeName}`,
-    `Department: ${entry.department || 'Not assigned'}`,
-    `Gross salary: INR ${Number(entry.gross).toFixed(2)}`,
-    `Deductions: INR ${Number(entry.deductions).toFixed(2)}`,
-    `Net salary: INR ${Number(entry.net).toFixed(2)}`,
-    `Payment status: ${run.status}`,
-    `Generated: ${new Date().toISOString()}`,
+  const [entry, profile] = await Promise.all([
+    PayrollEntry.findOne({ run: run._id, employee }).lean(),
+    EmployeeProfile.findOne({ user: employee }).lean(),
   ]);
+  if (!entry) throw new AppError(404, 'Payslip not found');
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="payslip-${run.data.year}-${run.data.month}.pdf"`);
-  res.send(pdf);
+  const disposition = req.query.disposition === 'inline' ? 'inline' : 'attachment';
+  res.setHeader('Content-Disposition', `${disposition}; filename="payslip-${run.data.year}-${String(run.data.month).padStart(2, '0')}.pdf"`);
+  streamPayslipPdf(res, { run, entry, profile });
 }
 
 export async function convertCandidate(req, res) {
@@ -791,6 +945,20 @@ export async function combinedCalendar(req, res) {
     HRMSRecord.find({ module: 'announcements', status: { $in: ['Published', 'Scheduled'] }, deletedAt: null }).lean(),
   ]);
   res.json({ success: true, message: 'HR calendar fetched successfully', data: { holidays, leaves, announcements } });
+}
+
+export async function holidayCalendar(req, res) {
+  const input = z.object({ from: date, to: date }).strict()
+    .refine((value) => value.to >= value.from, { message: 'End date must follow start date' })
+    .refine((value) => value.to - value.from <= 370 * 86400000, { message: 'Holiday calendar range cannot exceed 370 days' })
+    .parse(req.query);
+  const until = new Date(input.to.getTime() + 86400000);
+  const items = await HRMSRecord.find({
+    module: 'holidays',
+    deletedAt: null,
+    'data.date': { $gte: input.from, $lt: until },
+  }).sort({ 'data.date': 1, _id: 1 }).lean();
+  res.json({ success: true, message: 'Holiday calendar fetched successfully', data: { items } });
 }
 
 export async function reports(req, res) {

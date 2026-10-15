@@ -192,6 +192,19 @@ test('validated resource CRUD, pagination, status review and soft archive work',
   expect(list.body.data.items).toHaveLength(1);
   expect(list.body.data.items[0].title).toBe('Diwali');
 
+  const calendar = await request(app)
+    .get('/api/v1/hrms/holidays/calendar-view?from=2026-11-01&to=2026-11-30')
+    .auth(adminToken, { type: 'bearer' });
+  expect(calendar.status).toBe(200);
+  expect(calendar.body.data.items.map((item) => item.title)).toContain('Diwali');
+  const duplicate = await write('post', '/holidays', adminToken, {
+    title: 'Duplicate Diwali',
+    status: 'Published',
+    effectiveDate: '2026-11-08T00:00:00.000Z',
+    data: { date: '2026-11-08T00:00:00.000Z', type: 'company' },
+  });
+  expect(duplicate.status).toBe(409);
+
   const reviewed = await write(
     'patch',
     `/holidays/${id}/status`,
@@ -279,6 +292,11 @@ test('attendance punches and leave ledger enforce core workflow rules', async ()
   const employeeDashboard = await request(app).get('/api/v1/hrms/employee-dashboard').auth(employeeToken, { type: 'bearer' });
   expect(employeeDashboard.status).toBe(200);
   expect(employeeDashboard.body.data.dailyReport.status).toBe('Submitted');
+  expect(employeeDashboard.body.data.dailyReports).toHaveLength(1);
+  expect(employeeDashboard.body.data.tasks.length).toBeGreaterThanOrEqual(3);
+  expect(employeeDashboard.body.data.employee.profile.address.current).toBe('Mumbai current address');
+  expect(employeeDashboard.body.data.assets).toEqual([]);
+  expect(employeeDashboard.body.data.holidays).toEqual(expect.any(Array));
 
   const adjusted = await write('post', '/leaves/adjustments', adminToken, {
     employee: String(employee._id),
@@ -301,6 +319,89 @@ test('attendance punches and leave ledger enforce core workflow rules', async ()
   expect((await write('patch', `/leaves/requests/${leaveId}/cancel`, employeeToken, {})).status).toBe(200);
   const restored = await request(app).get('/api/v1/hrms/leaves/balance/me').auth(employeeToken, { type: 'bearer' });
   expect(restored.body.data).toEqual(expect.arrayContaining([{ leaveType: 'annual', balance: 5 }]));
+
+  const reviewRequest = await write('post', '/leaves/requests', employeeToken, {
+    leaveType: 'casual',
+    startDate: '2027-01-12T00:00:00.000Z',
+    endDate: '2027-01-12T00:00:00.000Z',
+    reason: 'Personal appointment',
+  });
+  const reviewId = reviewRequest.body.data._id;
+  expect((await write('patch', `/leaves/requests/${reviewId}/reject`, adminToken, {})).status).toBe(400);
+  const pending = await write('patch', `/leaves/requests/${reviewId}/pending`, adminToken, { reason: 'Waiting for team schedule' });
+  expect(pending.body.data.status).toBe('Pending');
+  expect(pending.body.data.data.reviewerNote).toBe('Waiting for team schedule');
+  const rejected = await write('patch', `/leaves/requests/${reviewId}/reject`, adminToken, { reason: 'Project delivery is scheduled on this date' });
+  expect(rejected.body.data.status).toBe('Rejected');
+  expect(rejected.body.data.data.reviewerNote).toBe('Project delivery is scheduled on this date');
+
+  const notifications = await request(app).get('/api/v1/notifications').auth(employeeToken, { type: 'bearer' });
+  expect(notifications.status).toBe(200);
+  expect(notifications.body.data.unreadCount).toBeGreaterThan(0);
+  expect(notifications.body.data.items[0].message).toContain('Project delivery is scheduled on this date');
+  const notificationId = notifications.body.data.items[0]._id;
+  expect((await request(app).patch(`/api/v1/notifications/${notificationId}/read`).set('Origin', origin).auth(employeeToken, { type: 'bearer' })).status).toBe(200);
+});
+
+test('attendance automation closes open punches and marks missed workdays on leave', async () => {
+  const passwordHash = await bcrypt.hash('EmployeePass123', 12);
+  const [missingEmployee, openEmployee] = await User.create([
+    { name: 'Missing Employee', email: 'missing-attendance@example.test', passwordHash, role: 'employee', department: 'graphics' },
+    { name: 'Open Attendance', email: 'open-attendance@example.test', passwordHash, role: 'employee', department: 'web_dev' },
+  ]);
+  await User.collection.updateMany(
+    { _id: { $in: [missingEmployee._id, openEmployee._id] } },
+    { $set: { createdAt: new Date('2020-01-01T00:00:00.000Z') } },
+  );
+  await HRMSRecord.create({
+    module: 'attendance',
+    title: 'Daily attendance',
+    employee: openEmployee._id,
+    department: openEmployee.department,
+    status: 'Present',
+    effectiveDate: new Date('2026-10-15T00:00:00+05:30'),
+    data: {
+      date: new Date('2026-10-15T00:00:00+05:30'),
+      checkIn: new Date('2026-10-15T09:30:00+05:30'),
+      attendanceStatus: 'On Time',
+    },
+    createdBy: openEmployee._id,
+    updatedBy: openEmployee._id,
+  });
+  const { runAttendanceAutomation } = await import('../src/services/attendanceAutomationService.js');
+  const now = new Date('2026-10-16T00:05:00+05:30');
+  const result = await runAttendanceAutomation({ now });
+  expect(result.autoCheckedOut).toBeGreaterThanOrEqual(1);
+  expect(result.markedOnLeave).toBeGreaterThanOrEqual(1);
+
+  const closed = await HRMSRecord.findOne({ module: 'attendance', employee: openEmployee._id });
+  expect(closed.data.autoCheckedOut).toBe(true);
+  expect(closed.data.checkOut.toISOString()).toBe('2026-10-15T18:29:59.000Z');
+  const automaticLeave = await HRMSRecord.findOne({ module: 'attendance', employee: missingEmployee._id, 'data.date': new Date('2026-10-15T00:00:00+05:30') });
+  expect(automaticLeave.status).toBe('Leave');
+  expect(automaticLeave.data.attendanceStatus).toBe('On Leave');
+  expect(automaticLeave.data.automaticLeave).toBe(true);
+
+  await runAttendanceAutomation({ now });
+  expect(await HRMSRecord.countDocuments({ module: 'attendance', employee: missingEmployee._id, 'data.date': new Date('2026-10-15T00:00:00+05:30') })).toBe(1);
+
+  const sundayResult = await runAttendanceAutomation({ now: new Date('2026-10-19T00:05:00+05:30') });
+  expect(sundayResult.skipped).toBe('sunday');
+  expect(await HRMSRecord.exists({ module: 'attendance', employee: missingEmployee._id, 'data.date': new Date('2026-10-18T00:00:00+05:30') })).toBeNull();
+
+  const admin = await User.findOne({ email: adminCredentials.email });
+  await HRMSRecord.create({
+    module: 'holidays',
+    title: 'Automation Holiday',
+    status: 'Published',
+    effectiveDate: new Date('2026-10-20T00:00:00+05:30'),
+    data: { date: new Date('2026-10-20T00:00:00+05:30'), type: 'company' },
+    createdBy: admin._id,
+    updatedBy: admin._id,
+  });
+  const holidayResult = await runAttendanceAutomation({ now: new Date('2026-10-21T00:05:00+05:30') });
+  expect(holidayResult.skipped).toBe('holiday');
+  expect(await HRMSRecord.exists({ module: 'attendance', employee: missingEmployee._id, 'data.date': new Date('2026-10-20T00:00:00+05:30') })).toBeNull();
 });
 
 test('candidate conversion is idempotent and payroll keeps calculation snapshots', async () => {
@@ -322,6 +423,61 @@ test('candidate conversion is idempotent and payroll keeps calculation snapshots
   expect(await User.exists({ email: 'aman@example.test' })).toBeNull();
 
   const riya = await User.findOne({ email: 'riya@example.test' });
+  const salaryLeave = await write('post', '/leaves/requests', employeeToken, {
+    leaveType: 'unpaid',
+    startDate: '2027-02-10T00:00:00.000Z',
+    endDate: '2027-02-11T00:00:00.000Z',
+    reason: 'Personal travel',
+  });
+  expect((await write('patch', `/leaves/requests/${salaryLeave.body.data._id}/approve`, adminToken, {})).status).toBe(200);
+  const preview = await request(app)
+    .get(`/api/v1/hrms/payroll/employee-calculation?employeeId=${riya.id}&month=2027-02&baseAmount=28000`)
+    .auth(adminToken, { type: 'bearer' });
+  expect(preview.status).toBe(200);
+  expect(preview.body.data.totalLeaveDays).toBe(2);
+  expect(preview.body.data.perDayAmount).toBe(1000);
+  expect(preview.body.data.professionalTax).toBe(200);
+  expect(preview.body.data.autoPayableAmount).toBe(25800);
+  const thresholdPreview = await request(app)
+    .get(`/api/v1/hrms/payroll/employee-calculation?employeeId=${riya.id}&month=2027-02&baseAmount=10000`)
+    .auth(adminToken, { type: 'bearer' });
+  expect(thresholdPreview.body.data.professionalTax).toBe(0);
+  const manualPayslip = await write('post', '/payroll/employee-payslips', adminToken, {
+    employeeId: riya.id,
+    month: '2027-02',
+    baseAmount: 28000,
+    payableAmount: 25500,
+    manualOverride: true,
+    note: 'Manual performance adjustment',
+  });
+  expect(manualPayslip.status).toBe(201);
+  expect(manualPayslip.body.data.entry.net).toBe(25500);
+  expect(manualPayslip.body.data.entry.snapshot.professionalTax).toBe(200);
+  expect(manualPayslip.body.data.entry.snapshot.manualAdjustment).toBe(-300);
+  const manualRunId = manualPayslip.body.data.payrollRun._id;
+  const manualDownload = await request(app).get(`/api/v1/hrms/payroll/payslips/${manualRunId}/download`).auth(employeeToken, { type: 'bearer' });
+  expect(manualDownload.status).toBe(200);
+  expect(manualDownload.headers['content-type']).toContain('application/pdf');
+  expect(manualDownload.headers['content-disposition']).toMatch(/^attachment;/);
+  expect(manualDownload.body.subarray(0, 4).toString()).toBe('%PDF');
+  const manualPreview = await request(app).get(`/api/v1/hrms/payroll/payslips/${manualRunId}/download?disposition=inline`).auth(employeeToken, { type: 'bearer' });
+  expect(manualPreview.status).toBe(200);
+  expect(manualPreview.headers['content-disposition']).toMatch(/^inline;/);
+  const salaryDashboard = await request(app).get('/api/v1/hrms/employee-dashboard').auth(employeeToken, { type: 'bearer' });
+  expect(salaryDashboard.body.data.payslips[0].payrollRun.data).toMatchObject({ month: 2, year: 2027 });
+  expect(salaryDashboard.body.data.payslips[0].entry.net).toBe(25500);
+
+  const automaticTaxPayslip = await write('post', '/payroll/employee-payslips', adminToken, {
+    employeeId: riya.id,
+    month: '2027-03',
+    baseAmount: 20000,
+    payableAmount: 20000,
+    manualOverride: false,
+  });
+  expect(automaticTaxPayslip.body.data.entry.net).toBe(19800);
+  expect(automaticTaxPayslip.body.data.entry.snapshot.professionalTax).toBe(200);
+  expect(automaticTaxPayslip.body.data.entry.snapshot.manualAdjustment).toBe(0);
+
   expect((await write('post', `/employees/${riya.id}/salary-assignments`, adminToken, {
     annualCTC: 600000,
     effectiveFrom: '2026-01-01T00:00:00.000Z',
@@ -335,6 +491,9 @@ test('candidate conversion is idempotent and payroll keeps calculation snapshots
   expect(calculated.body.data.data.employeeCount).toBeGreaterThan(0);
   const entries = await request(app).get(`/api/v1/hrms/payroll/runs/${runId}/entries`).auth(adminToken, { type: 'bearer' });
   expect(entries.body.data.items.length).toBeGreaterThan(0);
+  const riyaPayrollEntry = entries.body.data.items.find((item) => String(item.employee?._id || item.employee) === String(riya.id));
+  expect(riyaPayrollEntry.snapshot.professionalTax).toBe(200);
+  expect(riyaPayrollEntry.deductions).toBe(2000);
   expect((await write('post', `/payroll/runs/${runId}/approve`, adminToken, {})).status).toBe(409);
 
   await User.create({

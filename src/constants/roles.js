@@ -45,6 +45,7 @@ export const rolePermissionDefaults = {
     'hrms.manage',
     'hrms.approve',
     'hrms.payroll.read',
+    'hrms.payroll.manage',
   ],
   executive: ['dashboard.view', 'hrms.self'],
   team_leader: ['dashboard.view', 'users.read', 'hrms.read', 'hrms.approve'],
