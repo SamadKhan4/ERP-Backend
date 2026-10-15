@@ -24,6 +24,8 @@ export const rolePermissionDefaults = {
     'hrms.payroll.manage',
     'quotations.read',
     'quotations.manage',
+    'invoices.read',
+    'invoices.manage',
   ],
   manager: [
     'dashboard.view',
@@ -32,6 +34,8 @@ export const rolePermissionDefaults = {
     'hrms.approve',
     'quotations.read',
     'quotations.manage',
+    'invoices.read',
+    'invoices.manage',
   ],
   hr: [
     'dashboard.view',

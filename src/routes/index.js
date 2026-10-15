@@ -10,6 +10,7 @@ import { departments } from '../constants/departments.js';
 import { hrmsRouter } from './hrmsRoutes.js';
 import * as userManagement from '../controllers/userManagementController.js';
 import * as quotations from '../controllers/quotationController.js';
+import * as invoices from '../controllers/invoiceController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -57,6 +58,12 @@ router.get('/quotations/:id/download', authenticate, authorize('quotations.read'
 router.get('/quotations/:id', authenticate, authorize('quotations.read'), quotations.getQuotation);
 router.put('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.updateQuotation);
 router.delete('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.deleteQuotation);
+router.get('/invoices', authenticate, authorize('invoices.read'), invoices.listInvoices);
+router.post('/invoices', authenticate, authorize('invoices.manage'), invoices.createInvoice);
+router.get('/invoices/:id/download', authenticate, authorize('invoices.read'), invoices.downloadInvoice);
+router.get('/invoices/:id', authenticate, authorize('invoices.read'), invoices.getInvoice);
+router.put('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.updateInvoice);
+router.delete('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.deleteInvoice);
 router.get('/user-management', authenticate, userManagement.listManagedUsers);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);
