@@ -22,12 +22,16 @@ export const rolePermissionDefaults = {
     'hrms.approve',
     'hrms.payroll.read',
     'hrms.payroll.manage',
+    'quotations.read',
+    'quotations.manage',
   ],
   manager: [
     'dashboard.view',
     'users.read',
     'hrms.read',
     'hrms.approve',
+    'quotations.read',
+    'quotations.manage',
   ],
   hr: [
     'dashboard.view',

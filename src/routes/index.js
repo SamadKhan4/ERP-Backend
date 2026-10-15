@@ -9,6 +9,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { departments } from '../constants/departments.js';
 import { hrmsRouter } from './hrmsRoutes.js';
 import * as userManagement from '../controllers/userManagementController.js';
+import * as quotations from '../controllers/quotationController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -50,6 +51,12 @@ authRouter.post('/forgot-password', auth.forgotPassword);
 authRouter.post('/reset-password', auth.resetPassword);
 router.use('/auth', authRouter);
 router.use('/hrms', hrmsRouter);
+router.get('/quotations', authenticate, authorize('quotations.read'), quotations.listQuotations);
+router.post('/quotations', authenticate, authorize('quotations.manage'), quotations.createQuotation);
+router.get('/quotations/:id/download', authenticate, authorize('quotations.read'), quotations.downloadQuotation);
+router.get('/quotations/:id', authenticate, authorize('quotations.read'), quotations.getQuotation);
+router.put('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.updateQuotation);
+router.delete('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.deleteQuotation);
 router.get('/user-management', authenticate, userManagement.listManagedUsers);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);
