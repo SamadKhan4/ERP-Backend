@@ -1,10 +1,8 @@
 import PDFDocument from 'pdfkit';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { logoImage, watermarkImage } from '../assets/pdfBrandAssets.js';
 
 const require = createRequire(import.meta.url);
-const logoPath = fileURLToPath(new URL('../../../frontend/public/adborn_logo.png', import.meta.url));
-const watermarkPath = fileURLToPath(new URL('../../../frontend/public/watermark.png', import.meta.url));
 const currencyBoldFontPath = require.resolve('@fontsource/inter/files/inter-latin-ext-700-normal.woff');
 const navy = '#082f55';
 const cyan = '#159bd8';
@@ -33,14 +31,11 @@ function infoRow(doc, label, value, x, y, labelWidth, valueWidth, line = false) 
 export function streamInvoicePdf(res, invoice) {
   const doc = new PDFDocument({ size: [562, 842], margin: 0, info: { Title: invoice.invoiceNumber, Author: 'AdBorn Solutions' } });
   doc.registerFont('CurrencyBold', currencyBoldFontPath);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoiceNumber}.pdf"`);
-  doc.pipe(res);
 
   doc.rect(20, 30, 414, 5).fill(navy);
   doc.rect(434, 30, 108, 5).fill('#2bb7e8');
-  doc.save().opacity(0.1).image(watermarkPath, 420, -4, { width: 142 }).restore();
-  doc.image(logoPath, 20, 54, { width: 190 });
+  doc.save().opacity(0.1).image(watermarkImage, 420, -4, { width: 142 }).restore();
+  doc.image(logoImage, 20, 54, { width: 190 });
   doc.moveTo(20, 118).lineTo(542, 118).lineWidth(0.7).strokeColor('#c9ced2').stroke();
 
   doc.fillColor('#000').font('Helvetica-Bold').fontSize(24).text('INVOICE', 20, 139);
@@ -111,5 +106,9 @@ export function streamInvoicePdf(res, invoice) {
   doc.text('info@adbornsolutions.com', 135, 826, { lineBreak: false });
   doc.text('adbornsolutions.com', 300, 826, { lineBreak: false });
   doc.text('Nagpur, Maharashtra, India', 420, 826, { lineBreak: false });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${invoice.invoiceNumber}.pdf"`);
+  doc.on('error', (error) => res.destroy(error));
+  doc.pipe(res);
   doc.end();
 }

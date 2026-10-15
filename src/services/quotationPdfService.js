@@ -1,10 +1,8 @@
 import PDFDocument from 'pdfkit';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { logoImage, watermarkImage } from '../assets/pdfBrandAssets.js';
 
 const require = createRequire(import.meta.url);
-const logoPath = fileURLToPath(new URL('../../../frontend/public/adborn_logo.png', import.meta.url));
-const watermarkPath = fileURLToPath(new URL('../../../frontend/public/watermark.png', import.meta.url));
 const currencyBoldFontPath = require.resolve('@fontsource/inter/files/inter-latin-ext-700-normal.woff');
 const navy = '#082f55';
 const cyan = '#2bb7e8';
@@ -57,8 +55,8 @@ function partyBox(doc, heading, party, x, y, width) {
 function drawPageChrome(doc, quotation, pageNumber, pageCount) {
   doc.rect(20, 30, 414, 5).fill(navy);
   doc.rect(434, 30, 108, 5).fill(cyan);
-  doc.save().opacity(0.1).image(watermarkPath, 420, -4, { width: 142 }).restore();
-  doc.image(logoPath, 20, 54, { width: 190 });
+  doc.save().opacity(0.1).image(watermarkImage, 420, -4, { width: 142 }).restore();
+  doc.image(logoImage, 20, 54, { width: 190 });
   doc.moveTo(20, 118).lineTo(542, 118).lineWidth(0.7).strokeColor('#c9ced2').stroke();
   if (pageNumber === 1) {
     doc.fillColor('#000').font('Helvetica-Bold').fontSize(18).text('QUOTATION', 20, 136);
@@ -122,9 +120,6 @@ export function streamQuotationPdf(res, quotation) {
   const selectedServices = quotation.services?.length ? quotation.services : [quotation.service];
   const doc = new PDFDocument({ autoFirstPage: false, size: [562, 842], margin: 0, info: { Title: quotation.quotationNumber, Author: 'AdBorn Solutions' } });
   doc.registerFont('CurrencyBold', currencyBoldFontPath);
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename="${quotation.quotationNumber}.pdf"`);
-  doc.pipe(res);
   selectedServices.forEach((service, index) => {
     doc.addPage({ size: [562, 842], margin: 0 });
     drawPageChrome(doc, quotation, index + 1, selectedServices.length);
@@ -133,5 +128,9 @@ export function streamQuotationPdf(res, quotation) {
     if (index === selectedServices.length - 1) drawFinalSummary(doc, quotation, tableBottom);
     else doc.fillColor('#60778c').font('Helvetica').fontSize(8).text('Quotation continues on the next service page.', 20, 770);
   });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="${quotation.quotationNumber}.pdf"`);
+  doc.on('error', (error) => res.destroy(error));
+  doc.pipe(res);
   doc.end();
 }
