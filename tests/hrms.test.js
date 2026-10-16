@@ -919,6 +919,20 @@ test('candidate conversion is idempotent and payroll keeps calculation snapshots
   expect(payslip.status).toBe(200);
   expect(payslip.headers['content-type']).toContain('application/pdf');
   expect(payslip.headers['content-disposition']).toContain('.pdf');
+  const entry = await mongoose.model('PayrollEntry').findOne({ run: runId });
+  const profileUser = entry.employee;
+  const savedProfile = await EmployeeProfile.findOne({ user: profileUser }).lean();
+  await EmployeeProfile.deleteOne({ user: profileUser });
+  try {
+    const withoutProfile = await request(app)
+      .get(`/api/v1/hrms/payroll/payslips/${runId}/download?employee=${profileUser}`)
+      .auth(adminToken, { type: 'bearer' });
+    expect(withoutProfile.status).toBe(200);
+    expect(withoutProfile.headers['content-type']).toContain('application/pdf');
+    expect(withoutProfile.body.subarray(0, 5).toString()).toBe('%PDF-');
+  } finally {
+    if (savedProfile) await EmployeeProfile.collection.insertOne(savedProfile);
+  }
 });
 
 test('employee directory summary covers the full filtered directory independently of pagination and status', async () => {

@@ -18,6 +18,7 @@ import * as invoices from '../controllers/invoiceController.js';
 import * as notifications from '../controllers/notificationController.js';
 import { overview } from '../controllers/dashboardController.js';
 import * as mail from '../controllers/mailController.js';
+import * as outgoingMail from '../controllers/outgoingMailController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -79,6 +80,8 @@ router.put('/invoices/:id', authenticate, authorize('invoices.manage'), invoices
 router.delete('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.deleteInvoice);
 router.get('/user-management', authenticate, userManagement.listManagedUsers);
 router.get('/mail', authenticate, mail.list);
+router.get('/mail/sent', authenticate, outgoingMail.history);
+router.post('/mail/send', authenticate, rateLimit({ windowMs: 3600000, limit: 30, keyGenerator: (req) => String(req.user._id) }), outgoingMail.send);
 router.post('/mail/users/:id/welcome', authenticate, rateLimit({ windowMs: 60000, limit: 10 }), mail.resend);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);

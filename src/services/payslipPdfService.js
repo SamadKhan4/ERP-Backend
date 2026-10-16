@@ -90,6 +90,8 @@ function drawSummaryMoneyCard(doc, label, value, x, y, width) {
 }
 
 export function createPayslipDocument({ run, entry, profile = {} }) {
+  // A legacy payroll entry may outlive its optional employee profile.
+  profile ??= {};
   const doc = new PDFDocument({
     size: 'A4',
     margin: 0,

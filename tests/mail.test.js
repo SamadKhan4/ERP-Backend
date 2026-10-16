@@ -77,3 +77,21 @@ test('queue storage failure does not roll back account creation', async () => {
   expect(await User.exists({ email: 'queue-failed@mail.test' })).toBeTruthy();
   vi.restoreAllMocks();
 });
+
+test('all users can compose mail while sent history is private and sender cannot be spoofed', async () => {
+  const body = { recipient: 'client@example.test', subject: 'Project update', text: 'Your project is ready for review.' };
+  const created = await call('post', '/mail/send', employeeToken, body);
+  expect(created.status).toBe(202);
+  const own = await call('get', '/mail/sent', employeeToken);
+  expect(own.body.data.items.some((item) => item._id === created.body.data._id)).toBe(true);
+  const other = await call('get', '/mail/sent', hrToken);
+  expect(other.body.data.items).toHaveLength(0);
+  expect((await call('post', '/mail/send', employeeToken, { ...body, from: 'spoof@example.test' })).status).toBe(400);
+  expect((await call('post', '/mail/send', employeeToken, { ...body, subject: 'Hello\r\nBcc: bad@example.test' })).status).toBe(400);
+  const { processOutgoingMail } = await import('../src/services/outgoingMailService.js');
+  const { OutgoingMail } = await import('../src/models/OutgoingMail.js');
+  sendMail.mockResolvedValue({ accepted: ['client@example.test'] });
+  await processOutgoingMail();
+  expect((await OutgoingMail.findById(created.body.data._id)).status).toBe('SENT');
+  expect(sendMail.mock.calls.at(-1)[0]).toMatchObject({ from: 'sender@test.example', to: body.recipient, subject: body.subject, text: body.text });
+});

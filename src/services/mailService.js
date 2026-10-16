@@ -6,6 +6,7 @@ import { AuditLog } from '../models/AuditLog.js';
 import { logger } from '../config/logger.js';
 import { mailTransport, welcomeMessage } from './mailTransportService.js';
 import { AppError } from '../utils/errors.js';
+import { processOutgoingMail } from './outgoingMailService.js';
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const key = () => createHash('sha256').update(`adborn-mail:${env.JWT_REFRESH_SECRET}`).digest();
 function encrypt(token) {
@@ -74,7 +75,7 @@ export async function processMailQueue(limit = 10) {
 }
 export function startMailWorker() {
   let running = false;
-  const run = async () => { if (running) return; running = true; try { await processMailQueue(); } catch { logger.warn({ event: 'mail.worker_error' }, 'Mail queue unavailable'); } finally { running = false; } };
+  const run = async () => { if (running) return; running = true; try { await processMailQueue(); await processOutgoingMail(); } catch { logger.warn({ event: 'mail.worker_error' }, 'Mail queue unavailable'); } finally { running = false; } };
   void run();
   const timer = setInterval(run, 15000); timer.unref();
   return () => clearInterval(timer);
