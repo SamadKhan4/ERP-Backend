@@ -8,7 +8,7 @@ import {
   recordChange,
   transaction,
 } from '../services/crmTransactionService.js';
-import { activityTypes } from '../../../shared/crm.js';
+import { activityTypes } from '../../shared/crm.js';
 export async function listActivities(req, res) {
   const { page, limit, type } = z
     .object({

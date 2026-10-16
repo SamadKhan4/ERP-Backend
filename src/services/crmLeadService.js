@@ -3,7 +3,7 @@ import { Quotation } from '../models/Quotation.js';
 import { CRMSettings } from '../models/CRMSettings.js';
 import { Notification } from '../models/Notification.js';
 import { CRMFollowUp } from '../models/CRMFollowUp.js';
-import { sources, lostReasons } from '../../../shared/crm.js';
+import { sources, lostReasons } from '../../shared/crm.js';
 import { AppError } from '../utils/errors.js';
 import { has, id, leadScope, validateAssignee } from './crmAccessService.js';
 import {

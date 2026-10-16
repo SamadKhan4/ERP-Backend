@@ -4,7 +4,7 @@ import {
   priorities,
   temperatures,
   serviceCatalog,
-} from '../../../shared/crm.js';
+} from '../../shared/crm.js';
 const ref = (name) => ({ type: mongoose.Schema.Types.ObjectId, ref: name });
 export const leadFields = {
   companyName: { type: String, required: true, trim: true, maxlength: 160 },

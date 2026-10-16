@@ -7,7 +7,7 @@ import {
   stages,
   sources,
   lostReasons,
-} from '../../../shared/crm.js';
+} from '../../shared/crm.js';
 import {
   roles,
   roleDefinitions,

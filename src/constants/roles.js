@@ -1,5 +1,5 @@
-import { crmPermissions } from '../../../shared/crm.js';
-import { teamPermissions } from '../../../shared/team.js';
+import { crmPermissions } from '../../shared/crm.js';
+import { teamPermissions } from '../../shared/team.js';
 export const roleDefinitions = [
   { name: 'super_admin', label: 'Super Admin' },
   { name: 'admin', label: 'Admin' },

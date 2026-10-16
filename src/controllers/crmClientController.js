@@ -6,7 +6,7 @@ import { Quotation } from '../models/Quotation.js';
 import { Invoice } from '../models/Invoice.js';
 import { CRMFollowUp } from '../models/CRMFollowUp.js';
 import { leadSchema, objectId } from '../validators/crmValidator.js';
-import { serviceCatalog } from '../../../shared/crm.js';
+import { serviceCatalog } from '../../shared/crm.js';
 import { findLead } from '../services/crmLeadService.js';
 import { has, id, leadScope } from '../services/crmAccessService.js';
 import {

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { taskStatuses, taskPriorities } from '../../../shared/team.js';
+import { taskStatuses, taskPriorities } from '../../shared/team.js';
 const ref = (model) => ({ type: mongoose.Schema.Types.ObjectId, ref: model });
 const sprint = new mongoose.Schema(
   {

@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { sources, lostReasons } from '../../../shared/crm.js';
+import { sources, lostReasons } from '../../shared/crm.js';
 export const CRMSettings = mongoose.model(
   'CRMSettings',
   new mongoose.Schema(

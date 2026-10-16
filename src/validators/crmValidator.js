@@ -1,1 +1,1 @@
-export * from '../../../shared/crmValidation.js';
+export * from '../../shared/crmValidation.js';

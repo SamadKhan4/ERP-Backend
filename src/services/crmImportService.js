@@ -6,12 +6,12 @@ import { CRMImportBatch } from '../models/CRMImportBatch.js';
 import { Lead } from '../models/Lead.js';
 import { User } from '../models/User.js';
 import { CRMSettings } from '../models/CRMSettings.js';
-import { sources, serviceCatalog, lostReasons } from '../../../shared/crm.js';
+import { sources, serviceCatalog, lostReasons } from '../../shared/crm.js';
 import {
   importFields,
   suggestMapping,
   normalizeHeader,
-} from '../../../shared/crmImport.js';
+} from '../../shared/crmImport.js';
 import { createLeadSchema, objectId } from '../validators/crmValidator.js';
 import { createLead } from './crmLeadService.js';
 import { has, id, validateAssignee } from './crmAccessService.js';

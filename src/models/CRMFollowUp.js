@@ -3,7 +3,7 @@ import {
   followUpTypes,
   followUpStatuses,
   priorities,
-} from '../../../shared/crm.js';
+} from '../../shared/crm.js';
 const schema = new mongoose.Schema(
   {
     followUpId: { type: String, unique: true, required: true },

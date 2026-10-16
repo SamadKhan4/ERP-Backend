@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { activityTypes } from '../../../shared/crm.js';
+import { activityTypes } from '../../shared/crm.js';
 const schema = new mongoose.Schema(
   {
     lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', required: true },

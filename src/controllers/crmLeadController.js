@@ -10,7 +10,7 @@ import {
   sources,
   lostReasons,
   serviceCatalog,
-} from '../../../shared/crm.js';
+} from '../../shared/crm.js';
 import {
   createLeadSchema,
   updateLeadSchema,

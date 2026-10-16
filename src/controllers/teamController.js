@@ -5,7 +5,7 @@ import { TeamTask, TeamSprint, TeamStandup } from '../models/TeamWork.js';
 import { HRMSRecord } from '../models/HRMSRecord.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { Notification } from '../models/Notification.js';
-import { taskStatuses, taskPriorities } from '../../../shared/team.js';
+import { taskStatuses, taskPriorities } from '../../shared/team.js';
 import { objectId } from '../validators/crmValidator.js';
 import { has, id } from '../services/crmAccessService.js';
 import {

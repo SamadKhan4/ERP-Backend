@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { CRMFollowUp } from '../models/CRMFollowUp.js';
 import { followUpSchema } from '../validators/crmValidator.js';
-import { followUpStatuses, priorities } from '../../../shared/crm.js';
+import { followUpStatuses, priorities } from '../../shared/crm.js';
 import { id } from '../services/crmAccessService.js';
 import { findLead } from '../services/crmLeadService.js';
 import { transaction } from '../services/crmTransactionService.js';

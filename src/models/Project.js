@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { serviceCatalog } from '../../../shared/crm.js';
+import { serviceCatalog } from '../../shared/crm.js';
 const schema = new mongoose.Schema(
   {
     projectId: { type: String, required: true, unique: true },
