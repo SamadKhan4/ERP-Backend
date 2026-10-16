@@ -1,7 +1,6 @@
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
-import { unlink } from 'node:fs/promises';
-import { join } from 'node:path';
+import { storeDocument, readDocument, cleanupDocument, documentMime } from '../services/documentStorageService.js';
 import { z } from 'zod';
 import { HRMSRecord } from '../models/HRMSRecord.js';
 import { OnboardingDocument, onboardingDocumentTypes } from '../models/OnboardingDocument.js';
@@ -12,7 +11,6 @@ import { resolveDepartment } from '../services/departmentMasterService.js';
 import { auditDepartment } from '../services/departmentService.js';
 import { AppError } from '../utils/errors.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
-import { onboardingUploadRoot } from '../middleware/onboardingUpload.js';
 
 export const requiredOnboardingDocuments = [
   'identity_proof',
@@ -184,6 +182,8 @@ export async function uploadDocument(req, res) {
     if (record.status === 'Completed') throw new AppError(409, 'Completed onboarding is locked');
     const type = z.enum(onboardingDocumentTypes).parse(req.body.type);
     if (!req.file) throw new AppError(400, 'Document file is required');
+    req.file.mimetype = documentMime(req.file.buffer);
+    req.file.filename = await storeDocument('onboarding', req.file.buffer);
     const document = await OnboardingDocument.create({ onboarding: record._id, employee: record.employee, type, originalName: req.file.originalname, storedName: req.file.filename, mimeType: req.file.mimetype, size: req.file.size, uploadedBy: req.user.id });
     const documents = await OnboardingDocument.find({ onboarding: record._id, deletedAt: null }).sort({ createdAt: -1 }).lean();
     record.data = { ...record.data, progress: progressFor(documents) };
@@ -191,7 +191,7 @@ export async function uploadDocument(req, res) {
     await audit(req, 'hrms.onboarding.document_uploaded', record._id, { document: document._id, type });
     res.status(201).json({ success: true, message: 'Document uploaded successfully', data: documentView(document) });
   } catch (error) {
-    if (req.file?.filename) await unlink(join(onboardingUploadRoot, req.file.filename)).catch(() => {});
+    if (req.file?.filename) await cleanupDocument('onboarding', req.file.filename).catch(() => {});
     throw error;
   }
 }
@@ -220,7 +220,7 @@ export async function downloadDocument(req, res) {
   const document = await OnboardingDocument.findOne({ _id: req.params.documentId, onboarding: record._id, deletedAt: null }).select('+storedName');
   if (!document) throw new AppError(404, 'Onboarding document not found');
   await audit(req, 'hrms.onboarding.document_downloaded', record._id, { document: document._id });
-  res.download(join(onboardingUploadRoot, document.storedName), document.originalName);
+  res.type(document.mimeType).attachment(document.originalName).send(await readDocument('onboarding', document.storedName));
 }
 
 export async function deleteDocument(req, res) {
@@ -231,7 +231,7 @@ export async function deleteDocument(req, res) {
   if (!document) throw new AppError(404, 'Onboarding document not found');
   document.deletedAt = new Date();
   await document.save();
-  await unlink(join(onboardingUploadRoot, document.storedName)).catch(() => {});
+  await cleanupDocument('onboarding', document.storedName).catch(() => {});
   await audit(req, 'hrms.onboarding.document_removed', record._id, { document: document._id });
   res.json({ success: true, message: 'Document removed successfully' });
 }
@@ -246,7 +246,7 @@ export async function deleteOnboarding(req, res) {
   await Promise.all([
     record.save(),
     OnboardingDocument.updateMany({ onboarding: record._id, deletedAt: null }, { deletedAt: new Date() }),
-    ...documents.map((document) => unlink(join(onboardingUploadRoot, document.storedName)).catch(() => {})),
+    ...documents.map((document) => cleanupDocument('onboarding', document.storedName).catch(() => {})),
   ]);
   await audit(req, 'hrms.onboarding.deleted', record._id);
   res.json({ success: true, message: 'Onboarding form deleted successfully' });
@@ -264,6 +264,8 @@ export async function uploadMyDocument(req, res) {
     if (record.status === 'Completed') throw new AppError(409, 'Your onboarding is already completed');
     const type = z.enum(onboardingDocumentTypes).parse(req.body.type);
     if (!req.file) throw new AppError(400, 'Document file is required');
+    req.file.mimetype = documentMime(req.file.buffer);
+    req.file.filename = await storeDocument('onboarding', req.file.buffer);
     const document = await OnboardingDocument.create({ onboarding: record._id, employee: req.user.id, type, originalName: req.file.originalname, storedName: req.file.filename, mimeType: req.file.mimetype, size: req.file.size, uploadedBy: req.user.id });
     const documents = await OnboardingDocument.find({ onboarding: record._id, deletedAt: null }).sort({ createdAt: -1 }).lean();
     record.data = { ...record.data, progress: progressFor(documents) };
@@ -271,7 +273,7 @@ export async function uploadMyDocument(req, res) {
     await audit(req, 'hrms.onboarding.document_uploaded_by_employee', record._id, { document: document._id, type });
     res.status(201).json({ success: true, message: 'Document uploaded successfully and is awaiting HR verification', data: documentView(document) });
   } catch (error) {
-    if (req.file?.filename) await unlink(join(onboardingUploadRoot, req.file.filename)).catch(() => {});
+    if (req.file?.filename) await cleanupDocument('onboarding', req.file.filename).catch(() => {});
     throw error;
   }
 }
@@ -281,7 +283,7 @@ export async function downloadMyDocument(req, res) {
   ensureId(req.params.documentId);
   const document = await OnboardingDocument.findOne({ _id: req.params.documentId, onboarding: record._id, deletedAt: null }).select('+storedName');
   if (!document) throw new AppError(404, 'Onboarding document not found');
-  res.download(join(onboardingUploadRoot, document.storedName), document.originalName);
+  res.type(document.mimeType).attachment(document.originalName).send(await readDocument('onboarding', document.storedName));
 }
 
 export async function deleteMyDocument(req, res) {
@@ -292,7 +294,7 @@ export async function deleteMyDocument(req, res) {
   if (!document) throw new AppError(404, 'Only your pending or rejected document can be removed');
   document.deletedAt = new Date();
   await document.save();
-  await unlink(join(onboardingUploadRoot, document.storedName)).catch(() => {});
+  await cleanupDocument('onboarding', document.storedName).catch(() => {});
   const documents = await OnboardingDocument.find({ onboarding: record._id, deletedAt: null }).sort({ createdAt: -1 }).lean();
   record.data = { ...record.data, progress: progressFor(documents) };
   await record.save();

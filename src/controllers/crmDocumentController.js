@@ -1,8 +1,5 @@
 import multer from 'multer';
-import { mkdir, writeFile, unlink, readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { storeDocument, readDocument, cleanupDocument } from '../services/documentStorageService.js';
 import { AppError } from '../utils/errors.js';
 import { findLead } from '../services/crmLeadService.js';
 import {
@@ -11,12 +8,9 @@ import {
 } from '../services/crmTransactionService.js';
 import { env } from '../config/env.js';
 import { objectId } from '../validators/crmValidator.js';
-const directory = env.CRM_UPLOAD_DIR
-  ? resolve(env.CRM_UPLOAD_DIR)
-  : fileURLToPath(new URL('../../.crm-files/', import.meta.url));
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 1 },
+  limits: { fileSize: env.MAX_FILE_SIZE, files: 1 },
 }).single('file');
 export const receiveDocument = (req, res, next) =>
   upload(req, res, (error) =>
@@ -25,7 +19,7 @@ export const receiveDocument = (req, res, next) =>
           new AppError(
             400,
             error.code === 'LIMIT_FILE_SIZE'
-              ? 'File must be at most 5 MB'
+              ? 'File exceeds the configured size limit'
               : 'Invalid attachment upload',
           ),
         )
@@ -51,15 +45,10 @@ export async function addDocument(req, res) {
           : null;
   if (!mimeType)
     throw new AppError(400, 'Only PDF, PNG, and JPEG files are accepted');
-  const storageName = randomUUID();
+  const storageName = await storeDocument('crm', bytes);
   const name =
     req.file.originalname.replace(/[^a-zA-Z0-9 ._-]/g, '_').slice(0, 160) ||
     'document';
-  await mkdir(directory, { recursive: true });
-  await writeFile(resolve(directory, storageName), bytes, {
-    flag: 'wx',
-    mode: 0o600,
-  });
   try {
     await transaction(async (session) => {
       const current = await findLead(req, req.params.id, session);
@@ -84,7 +73,7 @@ export async function addDocument(req, res) {
       await current.save({ session });
     });
   } catch (error) {
-    await unlink(resolve(directory, storageName));
+    await cleanupDocument('crm', storageName).catch(() => {});
     throw error;
   }
   res.status(201).json({ success: true, message: 'Document uploaded' });
@@ -94,14 +83,7 @@ export async function downloadDocument(req, res) {
   const lead = await findLead(req, req.params.id);
   const attachment = lead.attachments.id(req.params.documentId);
   if (!attachment) throw new AppError(404, 'Document not found');
-  let bytes;
-  try {
-    bytes = await readFile(resolve(directory, attachment.storageName));
-  } catch (error) {
-    if (error.code === 'ENOENT')
-      throw new AppError(404, 'Document file unavailable');
-    throw error;
-  }
+  const bytes = await readDocument('crm', attachment.storageName);
   res.set('Content-Type', attachment.mimeType);
   res.set('X-Content-Type-Options', 'nosniff');
   res.attachment(attachment.name);

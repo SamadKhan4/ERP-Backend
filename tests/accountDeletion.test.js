@@ -62,6 +62,7 @@ beforeAll(async () => {
     Object.values(mongoose.models).map((Model) => Model.init()),
   );
   await mkdir(join(folder, 'crm'), { recursive: true });
+  await mkdir(join(folder, 'onboarding'), { recursive: true });
   admin = await account('admin@delete.test', 'admin');
   hr = await account('hr@delete.test', 'hr');
   superUser = await account('super@delete.test', 'super_admin');

@@ -231,7 +231,7 @@ test('employee lifecycle stores a separate profile and never returns password ha
       .set('Origin', origin)
       .auth(employeeToken, { type: 'bearer' })
       .field('type', type)
-      .attach('file', Buffer.from('%PDF onboarding test'), {
+      .attach('file', Buffer.from('%PDF-1.4 onboarding test'), {
         filename: `${type}.pdf`,
         contentType: 'application/pdf',
       });

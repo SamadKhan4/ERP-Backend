@@ -28,8 +28,17 @@ export const env = z
     PASSWORD_RESET_URL: z.string().optional(),
     ONBOARDING_UPLOAD_DIR: z.string().optional(),
     CRM_UPLOAD_DIR: z.string().optional(),
+    STORAGE_DRIVER: z.enum(['local', 'cloudinary']).default('local'),
+    UPLOAD_DIR: z.string().default('uploads'),
+    MAX_FILE_SIZE: z.coerce.number().int().min(1).max(50 * 1024 * 1024).default(10485760),
+    UPLOAD_TOKEN_MINUTES: z.coerce.number().int().min(1).max(60).default(20),
+    CLOUDINARY_CLOUD_NAME: z.string().regex(/^[a-zA-Z0-9_-]+$/).or(z.literal('')).optional(),
+    CLOUDINARY_API_KEY: z.string().optional(),
+    CLOUDINARY_API_SECRET: z.string().optional(),
   })
   .parse(process.env);
+if (env.STORAGE_DRIVER === 'cloudinary' && (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET))
+  throw new Error('Cloudinary storage requires cloud name, API key and API secret');
 if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET)
   throw new Error('JWT secrets must differ');
 if (

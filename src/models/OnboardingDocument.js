@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { env } from '../config/env.js';
 
 export const onboardingDocumentTypes = [
   'identity_proof',
@@ -19,7 +20,7 @@ const schema = new mongoose.Schema(
     originalName: { type: String, required: true, trim: true, maxlength: 255 },
     storedName: { type: String, required: true, unique: true, select: false },
     mimeType: { type: String, required: true, enum: ['application/pdf', 'image/jpeg', 'image/png'] },
-    size: { type: Number, required: true, min: 1, max: 5 * 1024 * 1024 },
+    size: { type: Number, required: true, min: 1, max: env.MAX_FILE_SIZE },
     status: { type: String, enum: ['Pending', 'Verified', 'Rejected'], default: 'Pending', index: true },
     note: { type: String, trim: true, maxlength: 500 },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },

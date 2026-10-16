@@ -1,3 +1,4 @@
+import { removeDocument } from './documentStorageService.js';
 import { unlink } from 'node:fs/promises';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,6 +21,11 @@ export async function cleanDeletedFiles(filter = {}, limit = 100) {
     .lean();
   for (const job of jobs) {
     try {
+      if (job.kind === 'crm' || job.kind === 'onboarding') {
+        await removeDocument(job.kind, job.name);
+        await FileDeletionJob.deleteOne({ _id: job._id });
+        continue;
+      }
       if (
         !roots[job.kind] ||
         basename(job.name) !== job.name ||
