@@ -14,6 +14,7 @@ import * as userManagement from '../controllers/userManagementController.js';
 import * as quotations from '../controllers/quotationController.js';
 import * as invoices from '../controllers/invoiceController.js';
 import * as notifications from '../controllers/notificationController.js';
+import { overview } from '../controllers/dashboardController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -57,6 +58,7 @@ router.use('/auth', authRouter);
 router.use('/hrms', hrmsRouter);
 router.use('/crm', crmRouter);
 router.use('/team', teamRouter);
+router.get('/dashboard/overview', authenticate, authorize('dashboard.view'), overview);
 router.get('/notifications', authenticate, notifications.listNotifications);
 router.patch('/notifications/read-all', authenticate, notifications.markAllNotificationsRead);
 router.patch('/notifications/:id/read', authenticate, notifications.markNotificationRead);

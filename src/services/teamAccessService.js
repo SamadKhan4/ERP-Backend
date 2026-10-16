@@ -9,6 +9,8 @@ export async function teamAccess(req, res, next) {
   next();
 }
 export const requireTeam = (permission) => (req, res, next) => {
+  if (permission.startsWith('team.workspace.') && req.user.role !== 'team_leader')
+    throw new AppError(403, 'Team workspace is available only to Team Leaders');
   if (!has(req.teamPermissions, permission))
     throw new AppError(403, 'Team workspace permission denied');
   next();

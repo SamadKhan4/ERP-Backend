@@ -1,5 +1,4 @@
 import { crmPermissions } from '../../shared/crm.js';
-import { teamPermissions } from '../../shared/team.js';
 export const roleDefinitions = [
   { name: 'super_admin', label: 'Super Admin' },
   { name: 'admin', label: 'Admin' },
@@ -59,8 +58,8 @@ export const rolePermissionDefaults = {
 rolePermissionDefaults.admin.push(...crmPermissions);
 rolePermissionDefaults.manager.push('crm.dashboard.view', 'crm.leads.view', 'crm.followups.view', 'crm.activities.view', 'crm.pipeline.view', 'crm.reports.view', 'crm.reports.export');
 rolePermissionDefaults.executive.push('crm.dashboard.view', 'crm.leads.view_own', 'crm.leads.create', 'crm.leads.edit', 'crm.leads.change_stage', 'crm.followups.view_own', 'crm.followups.create', 'crm.followups.edit', 'crm.followups.complete', 'crm.activities.view', 'crm.pipeline.view', 'crm.pipeline.manage');
-rolePermissionDefaults.admin.push(...teamPermissions);
-rolePermissionDefaults.manager.push(...teamPermissions);
+rolePermissionDefaults.admin.push('team.members.manage');
+rolePermissionDefaults.manager.push('team.members.manage');
 rolePermissionDefaults.team_leader.push('team.workspace.view', 'team.workspace.manage', 'team.tasks.self');
 rolePermissionDefaults.employee.push('team.tasks.self');
 rolePermissionDefaults.executive.push('team.tasks.self');

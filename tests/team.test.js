@@ -38,6 +38,8 @@ beforeAll(async () => {
   const { issueSession } = await import('../src/services/tokenService.js');
   for (const [key, role] of Object.entries({
     admin: 'admin',
+    super: 'super_admin',
+    manager: 'manager',
     leadA: 'team_leader',
     leadB: 'team_leader',
     memberA: 'employee',
@@ -316,4 +318,13 @@ test('employee task updates, reassignment and archiving stay synchronized with t
   expect(await Notification.exists({ recipient: users.memberB.id, type: 'team_task_assigned', link: '/employee#tasks' })).toBeTruthy();
   expect((await call('delete', `/tasks/${assigned._id}`, 'leadB', { version: 3 })).status).toBe(200);
   expect((await call('get', '/my-work', 'memberB')).body.data.tasks.some((item) => item._id === assigned._id)).toBe(false);
+});
+
+test('company administrators cannot open or operate the Team Leader workspace', async () => {
+  for (const actor of ['admin', 'super', 'manager', 'hr']) {
+    expect((await call('get', '/workspace', actor)).status).toBe(403);
+    expect((await call('get', '/leaders', actor)).status).toBe(403);
+    expect((await call('get', '/tasks', actor)).status).toBe(403);
+    expect((await call('post', '/tasks', actor, taskBody())).status).toBe(403);
+  }
 });

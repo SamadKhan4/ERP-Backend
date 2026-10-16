@@ -12,3 +12,4 @@ export const AuditLog = mongoose.model(
     { timestamps: true },
   ),
 );
+AuditLog.schema.index({ createdAt: -1 });

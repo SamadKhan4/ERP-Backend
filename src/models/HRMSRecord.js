@@ -71,5 +71,6 @@ schema.index({ module: 1, deletedAt: 1, _id: -1 });
 schema.index({ module: 1, status: 1, effectiveDate: -1 });
 schema.index({ module: 1, department: 1, deletedAt: 1 });
 schema.index({ module: 1, employee: 1, effectiveDate: -1 });
+schema.index({ module: 1, deletedAt: 1, 'data.date': 1, employee: 1 });
 
 export const HRMSRecord = mongoose.model('HRMSRecord', schema);

@@ -44,5 +44,6 @@ const schema = new mongoose.Schema({
 
 schema.index({ deletedAt: 1, createdAt: -1 });
 schema.index({ 'client.company': 1, deletedAt: 1 });
+schema.index({ deletedAt: 1, invoiceDate: 1, status: 1 });
 
 export const Invoice = mongoose.model('Invoice', schema);
