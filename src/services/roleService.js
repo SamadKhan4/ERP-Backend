@@ -13,6 +13,10 @@ export async function syncRoles() {
     );
   }
   for (const { name, label } of roleDefinitions) {
+    if (name === 'team_leader') {
+      await Role.updateOne({ name }, { $set: { label, permissions: rolePermissionDefaults[name] }, $setOnInsert: { name } }, { upsert: true, runValidators: true });
+      continue;
+    }
     await Role.updateOne(
       { name },
       {

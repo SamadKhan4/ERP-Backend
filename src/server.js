@@ -4,6 +4,8 @@ import { app } from './app.js';
 import { env } from './config/env.js';
 import { connectDatabase } from './config/db.js';
 import { startAttendanceAutomation } from './services/attendanceAutomationService.js';
+import { startCRMReminders } from './services/crmReminderService.js';
+let stopCRMReminders = () => {};
 let retry;
 let stopAttendanceAutomation = () => {};
 async function connect() {
@@ -11,6 +13,7 @@ async function connect() {
     await connectDatabase();
     logger.info('MongoDB connected');
     stopAttendanceAutomation = startAttendanceAutomation();
+    stopCRMReminders = startCRMReminders();
   } catch (err) {
     logger.warn(
       { err, event: 'database.retry' },
@@ -23,6 +26,7 @@ if (env.NODE_ENV === 'production') {
   await connectDatabase();
   logger.info({ event: 'database.connected' }, 'MongoDB connected');
   stopAttendanceAutomation = startAttendanceAutomation();
+  stopCRMReminders = startCRMReminders();
 } else void connect();
 const server = app.listen(env.PORT, env.HOST, () =>
   logger.info(`Backend listening on http://${env.HOST}:${env.PORT}`),
@@ -34,6 +38,7 @@ async function shutdown() {
   );
   clearTimeout(retry);
   stopAttendanceAutomation();
+  stopCRMReminders();
   const timeout = setTimeout(() => process.exit(1), 10000);
   timeout.unref();
   server.close(async () => {

@@ -57,6 +57,38 @@ afterAll(async () => {
   await rm(uploadDirectory, { recursive: true, force: true });
 });
 
+test('individual monitoring enforces roles and isolates employee records', async () => {
+  const { issueSession } = await import('../src/services/tokenService.js');
+  const passwordHash = await bcrypt.hash('MonitoringPass123', 4);
+  const target = await User.create({ name: 'Monitor Target', email: 'monitor-target@example.test', passwordHash, role: 'employee' });
+  const other = await User.create({ name: 'Other Target', email: 'monitor-other@example.test', passwordHash, role: 'employee' });
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  await HRMSRecord.create([
+    { module: 'attendance', title: 'Target attendance', employee: target.id, status: 'Present', data: { date: today, checkIn: today, minutesWorked: 125 }, createdBy: target.id },
+    { module: 'daily-reports', title: 'Private other report', employee: other.id, status: 'Submitted', data: { date: today, summary: 'Other employee confidential report' }, createdBy: other.id },
+    { module: 'attendance', title: 'Deleted attendance', employee: target.id, status: 'Present', data: { date: today, minutesWorked: 999 }, deletedAt: new Date(), createdBy: target.id },
+  ]);
+  const path = `/api/v1/hrms/employees/${target.id}/monitoring`;
+  expect((await request(app).get(path)).status).toBe(401);
+  for (const role of ['super_admin', 'admin', 'manager', 'hr', 'team_leader', 'employee', 'executive', 'customer', 'lead_caller']) {
+    const actor = await User.create({ name: role, email: `monitor-${role}@example.test`, passwordHash, role, department: 'graphics' });
+    const { accessToken } = await issueSession(actor);
+    const response = await request(app).get(path).auth(accessToken, { type: 'bearer' });
+    if (['super_admin', 'admin', 'manager', 'hr'].includes(role)) {
+      expect(response.status).toBe(200);
+      expect(response.body.data.summary.workedMinutes).toBe(125);
+      expect(response.body.data.summary.missingReports).toBe(1);
+      expect(response.body.data.attendance).toHaveLength(1);
+      expect(response.body.data.reports).toHaveLength(0);
+      expect(JSON.stringify(response.body)).not.toContain('passwordHash');
+      expect((await request(app).get(`${path}?days=1000`).auth(accessToken, { type: 'bearer' })).status).toBe(400);
+    } else expect(response.status).toBe(403);
+  }
+  await HRMSRecord.deleteMany({ employee: { $in: [target.id, other.id] } });
+  await User.deleteMany({ email: /^monitor-/ });
+});
+
 test('employee lifecycle stores a separate profile and never returns password hashes', async () => {
   const onboarding = await write('post', '/onboarding', adminToken, {
     personal: { fullName: 'Riya Shah', email: 'riya@example.test', dateOfBirth: '1998-10-20', phone: '9876543210', gender: 'Female', bloodGroup: 'B+' },

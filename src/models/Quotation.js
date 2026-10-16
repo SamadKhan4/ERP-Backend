@@ -32,6 +32,9 @@ const itemSchema = new mongoose.Schema(
 const schema = new mongoose.Schema(
   {
     quotationNumber: { type: String, required: true, unique: true, index: true },
+    lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
+    clientRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', index: true },
+    salesPerson: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     // `service` is retained as the primary service for older quotations.
     service: { type: String, enum: quotationServices, required: true, index: true },
     services: {

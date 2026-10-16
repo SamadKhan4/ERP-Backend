@@ -1,8 +1,7 @@
 import { verifyToken } from '../services/tokenService.js';
 import { User } from '../models/User.js';
-import { Role } from '../models/Role.js';
 import { AppError } from '../utils/errors.js';
-import { rolePermissionDefaults } from '../constants/roles.js';
+import { permissionsFor } from '../services/permissionService.js';
 export async function authenticate(req, res, next) {
   let payload;
   try {
@@ -19,11 +18,7 @@ export async function authenticate(req, res, next) {
   next();
 }
 export const authorize = (permission) => async (req, res, next) => {
-  const role = await Role.findOne({ name: req.user.role });
-  const permissions = new Set([
-    ...(rolePermissionDefaults[req.user.role] || []),
-    ...(role?.permissions || []),
-  ]);
+  const permissions = new Set(await permissionsFor(req.user));
   if (
     req.user.role !== 'super_admin' &&
     !permissions.has(permission)

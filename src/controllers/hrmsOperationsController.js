@@ -121,7 +121,7 @@ export async function attendanceCheckOut(req, res) {
   const earliest = new Date(startOfIndiaDay(now).getTime() - 86400000);
   const record = await HRMSRecord.findOne({ module: 'attendance', employee: req.user.id, deletedAt: null, 'data.checkIn': { $gte: earliest }, 'data.checkOut': { $exists: false } }).sort({ 'data.checkIn': -1 });
   if (!record) throw new AppError(409, 'No open attendance punch found');
-  if (['employee', 'executive'].includes(req.user.role)) {
+  if (['employee', 'executive', 'team_leader'].includes(req.user.role)) {
     const day = startOfIndiaDay(record.data.date || record.data.checkIn);
     const report = await HRMSRecord.exists({
       module: 'daily-reports',

@@ -5,8 +5,11 @@ import { Counter } from '../models/Counter.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
 import { streamInvoicePdf } from '../services/invoicePdfService.js';
+import { billingReferences } from '../services/billingReferenceService.js';
 
 const bodySchema = z.object({
+  quotation: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+  project: z.string().regex(/^[a-f\d]{24}$/i).optional(),
   invoiceDate: z.coerce.date(),
   dueDate: z.coerce.date(),
   client: z.object({
@@ -75,13 +78,14 @@ export async function listInvoices(req, res) {
 export async function getInvoice(req, res) { res.json({ success: true, data: await findInvoice(req.params.id) }); }
 export async function createInvoice(req, res) {
   const input = bodySchema.parse(req.body);
-  const invoice = await Invoice.create({ ...input, ...totals(input.items, input.gstRate), invoiceNumber: await nextInvoiceNumber(), createdBy: req.user.id, updatedBy: req.user.id });
+  const invoice = await Invoice.create({ ...input, ...await billingReferences(input), ...totals(input.items, input.gstRate), invoiceNumber: await nextInvoiceNumber(), createdBy: req.user.id, updatedBy: req.user.id });
   await audit(req, 'invoice.created', invoice);
   res.status(201).json({ success: true, message: 'Invoice created successfully', data: invoice });
 }
 export async function updateInvoice(req, res) {
   const input = bodySchema.parse(req.body);
   const invoice = await findInvoice(req.params.id);
+  if ((input.quotation && String(invoice.quotation) !== input.quotation) || (input.project && String(invoice.project) !== input.project)) throw new AppError(409, 'Existing billing references cannot be changed');
   Object.assign(invoice, input, totals(input.items, input.gstRate), { updatedBy: req.user.id });
   await invoice.save();
   await audit(req, 'invoice.updated', invoice);

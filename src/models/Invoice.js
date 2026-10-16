@@ -22,6 +22,10 @@ const itemSchema = new mongoose.Schema({
 
 const schema = new mongoose.Schema({
   invoiceNumber: { type: String, required: true, unique: true, index: true },
+  lead: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead', index: true },
+  clientRef: { type: mongoose.Schema.Types.ObjectId, ref: 'Client', index: true },
+  quotation: { type: mongoose.Schema.Types.ObjectId, ref: 'Quotation', index: true },
+  project: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
   invoiceDate: { type: Date, required: true },
   dueDate: { type: Date, required: true, index: true },
   client: { type: clientSchema, required: true },

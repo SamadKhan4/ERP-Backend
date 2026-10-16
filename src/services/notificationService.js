@@ -10,7 +10,6 @@ export async function notifyLeaveReviewers({ employee, record }) {
     _id: { $ne: employee._id },
     $or: [
       { role: { $in: ['super_admin', 'admin', 'manager', 'hr'] } },
-      { role: 'team_leader', department: employee.department },
     ],
   }).select('_id');
   if (!reviewers.length) return;

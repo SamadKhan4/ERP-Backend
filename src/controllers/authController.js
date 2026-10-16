@@ -32,8 +32,8 @@ export const logout = async (req, res) => {
   res.clearCookie('refreshToken', cookieOptions);
   res.json({ success: true });
 };
-export const me = (req, res) =>
-  res.json({ success: true, data: publicUser(req.user) });
+export const me = async (req, res) =>
+  res.json({ success: true, data: await publicUser(req.user) });
 export const changePassword = async (req, res) => {
   await service.changePassword(req.user, changeSchema.parse(req.body));
   res.clearCookie('refreshToken', cookieOptions);

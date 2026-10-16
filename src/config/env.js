@@ -27,6 +27,7 @@ export const env = z
     MAIL_FROM: z.string().optional(),
     PASSWORD_RESET_URL: z.string().optional(),
     ONBOARDING_UPLOAD_DIR: z.string().optional(),
+    CRM_UPLOAD_DIR: z.string().optional(),
   })
   .parse(process.env);
 if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET)

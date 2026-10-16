@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate, authorize } from '../middleware/authenticate.js';
 import * as employees from '../controllers/employeeController.js';
+import { employeeMonitoring, requireMonitoringRole } from '../controllers/employeeMonitoringController.js';
 import * as hrms from '../controllers/hrmsController.js';
 import * as operations from '../controllers/hrmsOperationsController.js';
 import * as onboarding from '../controllers/onboardingController.js';
@@ -10,6 +11,17 @@ import { AppError } from '../utils/errors.js';
 
 export const hrmsRouter = Router();
 hrmsRouter.use(authenticate);
+hrmsRouter.use((req, res, next) => {
+  if (req.user.role !== 'team_leader') return next();
+  const selfRoutes = {
+    GET: [/^\/employee-dashboard$/, /^\/attendance\/me$/, /^\/daily-reports\/me$/, /^\/leaves\/balance\/me$/, /^\/payroll\/payslips\/me$/, /^\/payroll\/payslips\/[a-f\d]{24}\/download$/i, /^\/self(?:\/|$)/],
+    POST: [/^\/attendance\/(check-in|check-out|regularizations)$/, /^\/daily-reports$/, /^\/leaves\/requests$/, /^\/assets\/[a-f\d]{24}\/acknowledge$/i, /^\/self(?:\/|$)/],
+    PATCH: [/^\/leaves\/requests\/[a-f\d]{24}\/cancel$/i],
+    DELETE: [/^\/self\/onboarding\/documents\/[a-f\d]{24}$/i],
+  };
+  if (!(selfRoutes[req.method] || []).some((pattern) => pattern.test(req.path))) throw new AppError(403, 'Team Leaders have employee self-service only; HRMS management access is disabled');
+  next();
+});
 
 const resourcePermission = (operation) => (req, res, next) => {
   const definition = hrmsResourceDefinitions[req.params.resource];
@@ -53,6 +65,7 @@ hrmsRouter.get('/employees', authorize('users.read'), employees.listEmployees);
 hrmsRouter.post('/employees', authorize('users.manage'), onboarding.blockDirectEmployeeCreation);
 hrmsRouter.post('/employees/from-onboarding/:id', authorize('users.manage'), onboarding.createEmployeeFromOnboarding);
 hrmsRouter.get('/employees/:id', authorize('users.read'), employees.getEmployee);
+hrmsRouter.get('/employees/:id/monitoring', requireMonitoringRole, employeeMonitoring);
 hrmsRouter.patch('/employees/:id', authorize('users.manage'), employees.updateEmployee);
 hrmsRouter.patch('/employees/:id/status', authorize('users.manage'), employees.updateEmployee);
 hrmsRouter.delete('/employees/:id', authorize('users.manage'), employees.deactivateEmployee);

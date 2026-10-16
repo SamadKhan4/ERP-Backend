@@ -5,6 +5,9 @@ import { Counter } from '../models/Counter.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
 import { streamQuotationPdf } from '../services/quotationPdfService.js';
+import { transaction, recordChange } from '../services/crmTransactionService.js';
+import { Lead } from '../models/Lead.js';
+import { Notification } from '../models/Notification.js';
 
 const party = z.object({
   company: z.string().trim().min(1).max(160),
@@ -64,12 +67,12 @@ async function findQuotation(id) {
   if (!quotation) throw new AppError(404, 'Quotation not found');
   return quotation;
 }
-async function audit(req, action, quotation) {
-  await AuditLog.create({ user: req.user.id, action, entityType: 'quotation', entityId: quotation._id, details: { quotationNumber: quotation.quotationNumber, status: quotation.status } });
+async function audit(req, action, quotation, session) {
+  await AuditLog.create([{ user: req.user.id, action, entityType: 'quotation', entityId: quotation._id, details: { quotationNumber: quotation.quotationNumber, status: quotation.status } }], { session });
 }
-async function nextQuotationNumber() {
+async function nextQuotationNumber(session) {
   const year = new Date().getFullYear();
-  const counter = await Counter.findByIdAndUpdate(`quotation-${year}`, { $inc: { value: 1 } }, { new: true, upsert: true, setDefaultsOnInsert: true });
+  const counter = await Counter.findByIdAndUpdate(`quotation-${year}`, { $inc: { value: 1 } }, { new: true, upsert: true, setDefaultsOnInsert: true, session });
   return `ADB-Q-${year}-${String(counter.value).padStart(4, '0')}`;
 }
 
@@ -101,6 +104,16 @@ export async function getQuotation(req, res) {
 export async function createQuotation(req, res) {
   const input = bodySchema.parse(req.body);
   const { services, items } = normalizeInput(input);
+  if (req.crmLead) {
+    const quotation = await transaction(async (session) => {
+      const lead = await Lead.findById(req.crmLead._id).session(session);
+      const [record] = await Quotation.create([{ ...input, items, services, service: services[0], ...totals(items, input.gstRate), quotationNumber: await nextQuotationNumber(session), lead: lead._id, clientRef: lead.convertedClientId, salesPerson: lead.assignedTo, createdBy: req.user.id, updatedBy: req.user.id }], { session });
+      await recordChange(req, lead, 'QUOTATION_CREATED', `Quotation created: ${record.quotationNumber}`, { quotation: record._id, quotationNumber: record.quotationNumber }, session);
+      if (record.status === 'Sent') await recordChange(req, lead, 'QUOTATION_SENT', 'Quotation sent', { quotation: record._id }, session);
+      await lead.save({ session }); return record;
+    });
+    return res.status(201).json({ success: true, message: 'Quotation created successfully', data: quotation });
+  }
   const quotation = await Quotation.create({
     ...input,
     items,
@@ -119,9 +132,19 @@ export async function updateQuotation(req, res) {
   const input = bodySchema.parse(req.body);
   const { services, items } = normalizeInput(input);
   const quotation = await findQuotation(req.params.id);
+  const previousStatus = quotation.status;
   Object.assign(quotation, input, { items, services, service: services[0] }, totals(items, input.gstRate), { updatedBy: req.user.id });
-  await quotation.save();
-  await audit(req, 'quotation.updated', quotation);
+  if (quotation.lead) {
+    await transaction(async (session) => {
+      await quotation.save({ session });
+      await audit(req, 'quotation.updated', quotation, session);
+      const lead = await Lead.findById(quotation.lead).session(session);
+      if (!lead) return;
+      await recordChange(req, lead, quotation.status === 'Sent' ? 'QUOTATION_SENT' : 'LEAD_UPDATED', `Quotation ${quotation.status.toLowerCase()}: ${quotation.quotationNumber}`, { quotation: quotation._id, status: quotation.status }, session);
+      if (quotation.status === 'Accepted' && previousStatus !== 'Accepted' && lead.assignedTo) await Notification.create([{ recipient: lead.assignedTo, type: 'crm_quotation_accepted', title: 'Quotation accepted', message: quotation.quotationNumber, link: `/crm/leads/${lead.id}`, createdBy: req.user._id }], { session });
+      await lead.save({ session });
+    });
+  } else { await quotation.save(); await audit(req, 'quotation.updated', quotation); }
   res.json({ success: true, message: 'Quotation updated successfully', data: quotation });
 }
 

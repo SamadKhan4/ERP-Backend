@@ -6,7 +6,7 @@ import { attendancePerformance } from './attendanceStatusService.js';
 
 const INDIA_OFFSET_MS = 330 * 60000;
 const DAY_MS = 86400000;
-const attendanceRoles = ['employee', 'executive'];
+const attendanceRoles = ['employee', 'executive', 'team_leader'];
 let automationTimer;
 
 export const startOfIndiaDay = (value = new Date()) => {

@@ -2,16 +2,16 @@ import jwt from 'jsonwebtoken';
 import { randomUUID, createHash } from 'node:crypto';
 import { env } from '../config/env.js';
 import { Session } from '../models/Session.js';
-import { rolePermissionDefaults } from '../constants/roles.js';
+import { permissionsFor } from './permissionService.js';
 export const hashToken = (token) =>
   createHash('sha256').update(token).digest('hex');
-export const publicUser = (user) => ({
+export const publicUser = async (user) => ({
   id: user.id,
   name: user.name,
   email: user.email,
   role: user.role,
   department: user.department || null,
-  permissions: rolePermissionDefaults[user.role] || [],
+  permissions: await permissionsFor(user),
 });
 export const verifyToken = (token, type) =>
   jwt.verify(
@@ -28,7 +28,7 @@ export async function issueSession(user) {
   const accessToken = jwt.sign(
     { version: user.tokenVersion },
     env.JWT_ACCESS_SECRET,
-    { ...options, audience: 'access', expiresIn: '15m' },
+    { ...options, audience: 'access', expiresIn: '7d' },
   );
   const refreshToken = jwt.sign(
     { version: user.tokenVersion },
@@ -40,5 +40,5 @@ export async function issueSession(user) {
     tokenHash: hashToken(refreshToken),
     expires: new Date(Date.now() + 7 * 86400000),
   });
-  return { accessToken, refreshToken, user: publicUser(user) };
+  return { accessToken, refreshToken, user: await publicUser(user) };
 }

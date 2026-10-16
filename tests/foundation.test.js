@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
+import jwt from 'jsonwebtoken';
 import { readFile, unlink } from 'node:fs/promises';
 let database, app, User, Session, hashToken;
 const origin = 'http://localhost:5173';
@@ -58,10 +59,14 @@ test('CORS accepts configured origins with trailing slashes and rejects other or
   expect(preflight.status).toBe(204);
   expect(preflight.headers['access-control-allow-origin']).toBe(allowed);
   expect(preflight.headers['access-control-allow-credentials']).toBe('true');
-  const refresh = await request(app).post('/api/v1/auth/refresh').set('Origin', allowed);
+  const refresh = await request(app)
+    .post('/api/v1/auth/refresh')
+    .set('Origin', allowed);
   expect(refresh.status).toBe(401);
   expect(refresh.headers['access-control-allow-origin']).toBe(allowed);
-  const rejected = await request(app).post('/api/v1/auth/refresh').set('Origin', 'https://untrusted.example');
+  const rejected = await request(app)
+    .post('/api/v1/auth/refresh')
+    .set('Origin', 'https://untrusted.example');
   expect(rejected.status).toBe(403);
   expect(rejected.headers['access-control-allow-origin']).toBeUndefined();
 });
@@ -114,6 +119,9 @@ test('authentication, rotation, logout, RBAC and strict profile validation', asy
   expect(login.status).toBe(200);
   const token = login.body.data.accessToken;
   const cookie = login.headers['set-cookie'][0].split(';')[0];
+  const payload = jwt.decode(token);
+  expect(payload.exp - payload.iat).toBe(7 * 86400);
+  expect(login.headers['set-cookie'][0]).toContain('Max-Age=604800');
   expect(cookie).toContain('refreshToken=');
   expect(login.headers['set-cookie'][0]).toContain('HttpOnly');
   expect(
