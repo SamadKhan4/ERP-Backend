@@ -24,6 +24,12 @@ export const env = z
     TRUST_PROXY: z.coerce.number().int().min(0).default(0),
     RESET_DELIVERY: z.enum(['file', 'smtp']).default('file'),
     SMTP_URL: z.string().optional(),
+    SMTP_HOST: z.string().optional(),
+    SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(465),
+    SMTP_SECURE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+    SMTP_USER: z.string().optional(),
+    SMTP_PASS: z.string().optional(),
+    MAIL_DELIVERY: z.enum(['disabled', 'smtp']).default('disabled'),
     MAIL_FROM: z.string().optional(),
     PASSWORD_RESET_URL: z.string().optional(),
     ONBOARDING_UPLOAD_DIR: z.string().optional(),
@@ -37,6 +43,9 @@ export const env = z
     CLOUDINARY_API_SECRET: z.string().optional(),
   })
   .parse(process.env);
+export const smtpConfigured = Boolean(env.SMTP_URL || (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS));
+if (env.MAIL_DELIVERY === 'smtp' && (!smtpConfigured || !env.MAIL_FROM))
+  throw new Error('Mail delivery requires SMTP settings and MAIL_FROM');
 if (env.STORAGE_DRIVER === 'cloudinary' && (!env.CLOUDINARY_CLOUD_NAME || !env.CLOUDINARY_API_KEY || !env.CLOUDINARY_API_SECRET))
   throw new Error('Cloudinary storage requires cloud name, API key and API secret');
 if (env.JWT_ACCESS_SECRET === env.JWT_REFRESH_SECRET)
@@ -45,7 +54,7 @@ if (
   env.NODE_ENV === 'production' &&
   (!env.COOKIE_SECURE ||
     env.RESET_DELIVERY !== 'smtp' ||
-    !env.SMTP_URL ||
+    !smtpConfigured ||
     !env.MAIL_FROM ||
     !env.PASSWORD_RESET_URL?.startsWith('https://'))
 )

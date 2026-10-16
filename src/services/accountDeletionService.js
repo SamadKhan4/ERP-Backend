@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Session } from '../models/Session.js';
+import { MailJob } from '../models/MailJob.js';
 import { EmployeeProfile } from '../models/EmployeeProfile.js';
 import { HRMSRecord } from '../models/HRMSRecord.js';
 import { LeaveLedger } from '../models/LeaveLedger.js';
@@ -283,6 +284,7 @@ export async function deleteAccount({
       // Run sequentially: MongoDB does not support parallel operations in a transaction.
       for (const [Model, filter] of [
         [Session, { user }],
+        [MailJob, { user }],
         [EmployeeProfile, { user }],
         [HRMSRecord, { _id: { $in: ids(hr) } }],
         [OnboardingDocument, { _id: { $in: ids(documents) } }],

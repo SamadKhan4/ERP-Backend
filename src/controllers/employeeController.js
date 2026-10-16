@@ -5,6 +5,7 @@ import {
 import { resolveDepartment } from '../services/departmentMasterService.js';
 import { permissionsFor } from '../services/permissionService.js';
 import bcrypt from 'bcryptjs';
+import { welcomeAfterCreation } from '../services/mailService.js';
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Session } from '../models/Session.js';
@@ -221,6 +222,7 @@ export async function createEmployee(req, res) {
       entityType: 'employees',
       entityId: user.id,
     });
+    await welcomeAfterCreation(user);
     res.status(201).json({
       success: true,
       data: {

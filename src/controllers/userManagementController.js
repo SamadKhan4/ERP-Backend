@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { welcomeAfterCreation } from '../services/mailService.js';
 import mongoose from 'mongoose';
 import { z } from 'zod';
 import { User } from '../models/User.js';
@@ -64,6 +65,7 @@ export async function createManagedUser(req, res) {
     active: true,
   });
   await AuditLog.create({ user: req.user.id, action: 'user_management.created', entityType: 'user', entityId: user.id, details: { role: user.role } });
+  await welcomeAfterCreation(user);
   res.status(201).json({ success: true, message: 'User created successfully', data: { _id: user._id, name: user.name, email: user.email, role: user.role, active: user.active, createdAt: user.createdAt } });
 }
 

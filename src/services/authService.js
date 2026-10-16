@@ -1,7 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
-import nodemailer from 'nodemailer';
+import { mailTransport, passwordLink } from './mailTransportService.js';
 import { User } from '../models/User.js';
 import { Session } from '../models/Session.js';
 import { AuditLog } from '../models/AuditLog.js';
@@ -64,7 +64,7 @@ export async function forgotPassword(email) {
     text: `Password reset token (expires in 30 minutes): ${token}${env.PASSWORD_RESET_URL ? `\n${env.PASSWORD_RESET_URL}?token=${token}` : ''}`,
   };
   if (env.RESET_DELIVERY === 'smtp')
-    await nodemailer.createTransport(env.SMTP_URL).sendMail(message);
+    await mailTransport().sendMail({ ...message, text: `Set a new AdBorn ERP password within 30 minutes: ${passwordLink(token)}\nIf you did not request this, ignore this email.` });
   else {
     const directory = new URL('../../.reset-mail/', import.meta.url);
     await mkdir(directory, { recursive: true });

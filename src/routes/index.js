@@ -17,6 +17,7 @@ import * as quotations from '../controllers/quotationController.js';
 import * as invoices from '../controllers/invoiceController.js';
 import * as notifications from '../controllers/notificationController.js';
 import { overview } from '../controllers/dashboardController.js';
+import * as mail from '../controllers/mailController.js';
 export const router = Router();
 router.get('/health', (req, res) =>
   res.json({
@@ -77,6 +78,8 @@ router.get('/invoices/:id', authenticate, authorize('invoices.read'), invoices.g
 router.put('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.updateInvoice);
 router.delete('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.deleteInvoice);
 router.get('/user-management', authenticate, userManagement.listManagedUsers);
+router.get('/mail', authenticate, mail.list);
+router.post('/mail/users/:id/welcome', authenticate, rateLimit({ windowMs: 60000, limit: 10 }), mail.resend);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);
 router.delete('/user-management/:id', authenticate, userManagement.deactivateManagedUser);

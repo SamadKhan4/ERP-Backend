@@ -6,6 +6,8 @@ import { connectDatabase } from './config/db.js';
 import { startAttendanceAutomation } from './services/attendanceAutomationService.js';
 import { startCRMReminders } from './services/crmReminderService.js';
 import { startFileDeletionWorker } from './services/fileDeletionService.js';
+import { startMailWorker } from './services/mailService.js';
+let stopMailWorker = () => {};
 let stopFileDeletionWorker = () => {};
 let stopCRMReminders = () => {};
 let retry;
@@ -17,6 +19,7 @@ async function connect() {
     stopAttendanceAutomation = startAttendanceAutomation();
     stopCRMReminders = startCRMReminders();
     stopFileDeletionWorker = startFileDeletionWorker();
+    stopMailWorker = startMailWorker();
   } catch (err) {
     logger.warn(
       { err, event: 'database.retry' },
@@ -31,6 +34,7 @@ if (env.NODE_ENV === 'production') {
   stopAttendanceAutomation = startAttendanceAutomation();
   stopCRMReminders = startCRMReminders();
   stopFileDeletionWorker = startFileDeletionWorker();
+  stopMailWorker = startMailWorker();
 } else void connect();
 const server = app.listen(env.PORT, env.HOST, () =>
   logger.info(`Backend listening on http://${env.HOST}:${env.PORT}`),
@@ -44,6 +48,7 @@ async function shutdown() {
   stopAttendanceAutomation();
   stopCRMReminders();
   stopFileDeletionWorker();
+  stopMailWorker();
   const timeout = setTimeout(() => process.exit(1), 10000);
   timeout.unref();
   server.close(async () => {

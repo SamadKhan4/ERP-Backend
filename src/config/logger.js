@@ -33,7 +33,7 @@ export function safeError(error) {
       : error.message || 'Unknown error';
   let stack = error.stack || '';
   for (const [key, value] of Object.entries(process.env)) {
-    if (/PASSWORD|SECRET|TOKEN|MONGO_URI|SMTP_URL/.test(key) && value) {
+    if (/PASSWORD|SECRET|TOKEN|MONGO_URI|SMTP_URL|SMTP_PASS/.test(key) && value) {
       message = message.split(value).join('[REDACTED]');
       stack = stack.split(value).join('[REDACTED]');
     }

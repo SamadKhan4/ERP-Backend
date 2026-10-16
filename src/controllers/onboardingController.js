@@ -1,4 +1,5 @@
 import bcrypt from 'bcryptjs';
+import { welcomeAfterCreation } from '../services/mailService.js';
 import mongoose from 'mongoose';
 import { storeDocument, readDocument, cleanupDocument, documentMime } from '../services/documentStorageService.js';
 import { z } from 'zod';
@@ -364,6 +365,7 @@ export async function createEmployeeFromOnboarding(req, res) {
     await Promise.all([record.save(), OnboardingDocument.updateMany({ onboarding: record._id, deletedAt: null }, { employee: user._id })]);
     await audit(req, 'hrms.employee.created_from_onboarding', record._id, { employee: user._id });
     await auditDepartment(req.user, await resolveDepartment(user.department), 'EMPLOYEE_ADDED', { employee: user._id, source: 'onboarding' });
+    await welcomeAfterCreation(user);
     res.status(201).json({ success: true, message: 'Employee ID and login credentials created successfully', data: { onboarding: record, employee: { _id: user._id, name: user.name, email: user.email, role: user.role, department: user.department, active: user.active }, profile } });
   } catch (error) {
     await Promise.all([User.deleteOne({ _id: user._id }), EmployeeProfile.deleteOne({ user: user._id }), OnboardingDocument.updateMany({ onboarding: record._id }, { $unset: { employee: 1 } })]);
