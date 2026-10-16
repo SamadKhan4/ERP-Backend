@@ -6,7 +6,9 @@ import { authenticate, authorize } from '../middleware/authenticate.js';
 import { profileSchema } from '../validators/authValidator.js';
 import { User } from '../models/User.js';
 import { AuditLog } from '../models/AuditLog.js';
-import { departments } from '../constants/departments.js';
+import { departmentRouter } from './departmentRoutes.js';
+import { transfer as transferDepartment } from '../controllers/departmentController.js';
+import { departmentAccess, requireDepartmentPermission } from '../services/departmentService.js';
 import { hrmsRouter } from './hrmsRoutes.js';
 import { crmRouter } from './crmRoutes.js';
 import { teamRouter } from './teamRoutes.js';
@@ -78,9 +80,9 @@ router.get('/user-management', authenticate, userManagement.listManagedUsers);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);
 router.delete('/user-management/:id', authenticate, userManagement.deactivateManagedUser);
-router.get('/departments', authenticate, (req, res) =>
-  res.json({ success: true, data: departments }),
-);
+router.delete('/user-management/:id/permanent', authenticate, userManagement.deleteManagedUser);
+router.use('/departments', departmentRouter);
+router.patch('/employees/:id/department', authenticate, departmentAccess, requireDepartmentPermission('departments.manage_members'), transferDepartment);
 router.get('/users/me', authenticate, auth.me);
 router.patch('/users/me', authenticate, async (req, res) => {
   const data = profileSchema.parse(req.body);

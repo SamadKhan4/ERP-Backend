@@ -83,6 +83,7 @@ test('departments require authentication and employee directory enforces RBAC', 
     'graphics',
     'video_editing',
     'seo',
+    'bde',
   ]);
   expect(
     (

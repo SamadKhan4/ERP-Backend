@@ -1,5 +1,4 @@
 import mongoose from 'mongoose';
-import { departments } from '../constants/departments.js';
 
 export const hrmsResourceNames = [
   'departments',
@@ -49,7 +48,6 @@ const schema = new mongoose.Schema(
     title: { type: String, required: true, trim: true, maxlength: 180 },
     department: {
       type: String,
-      enum: departments.map(({ id }) => id),
       index: true,
     },
     employee: { type: mongoose.Schema.Types.ObjectId, ref: 'User', index: true },

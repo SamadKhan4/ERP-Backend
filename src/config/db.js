@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { env } from './env.js';
+import { migrateDepartmentReferences } from '../services/departmentMasterService.js';
 mongoose.set('bufferCommands', false);
 // Models are imported before connecting. Defer collection/index work until
 // MongoDB is ready rather than letting model compilation start it early.
@@ -11,5 +12,6 @@ export async function connectDatabase() {
     await model.createCollection();
     await model.createIndexes();
   }
+  await migrateDepartmentReferences();
   return mongoose.connection;
 }

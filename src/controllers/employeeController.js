@@ -1,3 +1,9 @@
+import {
+  assignDepartmentEmployee,
+  auditDepartment,
+} from '../services/departmentService.js';
+import { resolveDepartment } from '../services/departmentMasterService.js';
+import { permissionsFor } from '../services/permissionService.js';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
@@ -11,13 +17,14 @@ import {
 } from '../validators/hrmsValidator.js';
 import { AppError } from '../utils/errors.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
+import { deleteAccount } from '../services/accountDeletionService.js';
+import { z } from 'zod';
 import {
   assertEmployeeTargetAccess,
   employeeRoleFilterFor,
 } from '../services/employeeAccessService.js';
 
-const escapeRegExp = (value) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function ensureId(id) {
   if (!mongoose.isValidObjectId(id))
@@ -105,18 +112,44 @@ export async function listEmployees(req, res) {
   const countFilter = { ...filter };
   delete countFilter._id;
   const total = await User.countDocuments(countFilter);
+  const summaryFilter = { ...countFilter };
+  delete summaryFilter.active;
+  const [summary] = await User.aggregate([
+    { $match: summaryFilter },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: 1 },
+        active: { $sum: { $cond: ['$active', 1, 0] } },
+        inactive: { $sum: { $cond: ['$active', 0, 1] } },
+        teamLeaders: {
+          $sum: { $cond: [{ $eq: ['$role', 'team_leader'] }, 1, 0] },
+        },
+      },
+    },
+  ]);
   res.json({
     success: true,
     message: 'Employees fetched successfully',
     data: {
-      items: await withProfiles(page, ['super_admin', 'admin', 'hr'].includes(req.user.role)),
+      items: await withProfiles(
+        page,
+        ['super_admin', 'admin', 'hr'].includes(req.user.role),
+      ),
+      summary: summary
+        ? {
+            total: summary.total,
+            active: summary.active,
+            inactive: summary.inactive,
+            teamLeaders: summary.teamLeaders,
+          }
+        : { total: 0, active: 0, inactive: 0, teamLeaders: 0 },
       pagination: {
         page: query.page,
         limit: query.limit,
         total,
         totalPages: Math.ceil(total / query.limit),
-        nextCursor:
-          rows.length > query.limit ? String(page.at(-1)._id) : null,
+        nextCursor: rows.length > query.limit ? String(page.at(-1)._id) : null,
       },
     },
   });
@@ -134,7 +167,10 @@ export async function getEmployee(req, res) {
     .select('_id name email role department active createdAt updatedAt')
     .lean();
   if (!user) throw new AppError(404, 'Employee not found');
-  const [data] = await withProfiles([user], ['super_admin', 'admin', 'hr'].includes(req.user.role));
+  const [data] = await withProfiles(
+    [user],
+    ['super_admin', 'admin', 'hr'].includes(req.user.role),
+  );
   res.json({ success: true, data });
 }
 
@@ -172,6 +208,13 @@ export async function createEmployee(req, res) {
       address,
       emergencyContact,
     });
+    if (user.department)
+      await auditDepartment(
+        req.user,
+        await resolveDepartment(user.department),
+        'EMPLOYEE_ADDED',
+        { employee: user._id },
+      );
     await AuditLog.create({
       user: req.user.id,
       action: 'hrms.employees.created',
@@ -240,6 +283,31 @@ export async function updateEmployee(req, res) {
     (await User.countDocuments({ role: 'super_admin', active: true })) <= 1
   )
     throw new AppError(409, 'At least one active Super Admin is required');
+  if (
+    (parsed.department && parsed.department !== user.department) ||
+    parsed.manager !== undefined
+  ) {
+    req.departmentPermissions = await permissionsFor(req.user);
+    if (
+      !req.departmentPermissions.includes('*') &&
+      !req.departmentPermissions.includes('departments.manage_members')
+    )
+      throw new AppError(403, 'Department membership permission denied');
+    const currentProfile = await EmployeeProfile.findOne({
+      user: user._id,
+    }).lean();
+    await assignDepartmentEmployee(req, parsed.department || user.department, {
+      employee: user.id,
+      designation:
+        parsed.designation || currentProfile?.designation || 'Employee',
+      manager:
+        parsed.manager === undefined
+          ? currentProfile?.manager?.toString()
+          : parsed.manager,
+    });
+    user.department = parsed.department || user.department;
+    user.departmentId = (await resolveDepartment(user.department))._id;
+  }
   Object.assign(user, userUpdates);
   await user.save();
   const profile = await EmployeeProfile.findOneAndUpdate(
@@ -319,4 +387,22 @@ export async function getMyEmployeeProfile(req, res) {
     .lean();
   const [data] = await withProfiles([user], true);
   res.json({ success: true, data });
+}
+
+export async function deleteEmployee(req, res) {
+  const { confirmation } = z
+    .object({ confirmation: z.string().email() })
+    .strict()
+    .parse(req.body);
+  const data = await deleteAccount({
+    actor: req.user,
+    targetId: req.params.id,
+    channel: 'employee',
+    confirmation,
+  });
+  res.json({
+    success: true,
+    message: 'Employee and related records permanently deleted',
+    data,
+  });
 }

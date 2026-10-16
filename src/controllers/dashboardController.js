@@ -214,8 +214,9 @@ export async function overview(req, res) {
     ]),
     Invoice.find({ deletedAt: null })
       .select(
-        'invoiceNumber client.company invoiceDate dueDate grandTotal status',
+        'invoiceNumber client.company project invoiceDate dueDate grandTotal status',
       )
+      .populate('project', 'title')
       .sort({ createdAt: -1 })
       .limit(8)
       .lean(),

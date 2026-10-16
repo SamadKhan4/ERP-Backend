@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { departments } from '../constants/departments.js';
+import { departmentReferenceHooks } from '../services/departmentMasterService.js';
 
 const schema = new mongoose.Schema(
   {
@@ -21,7 +21,6 @@ const schema = new mongoose.Schema(
     designation: { type: String, trim: true, maxlength: 120 },
     department: {
       type: String,
-      enum: departments.map(({ id }) => id),
       index: true,
     },
     employmentType: {
@@ -37,6 +36,11 @@ const schema = new mongoose.Schema(
     phone: { type: String, trim: true, maxlength: 30 },
     alternatePhone: { type: String, trim: true, maxlength: 30 },
     manager: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    departmentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Department',
+      index: true,
+    },
     workLocation: { type: String, trim: true, maxlength: 120 },
     address: { type: mongoose.Schema.Types.Mixed },
     education: { type: [mongoose.Schema.Types.Mixed], default: [] },
@@ -52,5 +56,7 @@ const schema = new mongoose.Schema(
 
 schema.index({ department: 1, joiningDate: -1 });
 schema.index({ dateOfBirth: 1 });
+schema.index({ manager: 1, user: 1 });
 
+departmentReferenceHooks(schema, false);
 export const EmployeeProfile = mongoose.model('EmployeeProfile', schema);

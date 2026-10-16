@@ -142,6 +142,19 @@ test('overview aggregates real invoices, unique attendance, tasks and CRM while 
   const response = await get(adminToken, '?date=2026-09-15');
   expect(response.status).toBe(200);
   const data = response.body.data;
+  const overdue = await request(app)
+    .get('/api/v1/invoices?view=overdue&limit=1')
+    .auth(adminToken, { type: 'bearer' });
+  expect(overdue.status).toBe(200);
+  expect(overdue.body.data.pagination.total).toBe(2);
+  expect(overdue.body.data.items).toHaveLength(1);
+  expect(
+    (
+      await request(app)
+        .get('/api/v1/invoices?view=outstanding')
+        .auth(adminToken, { type: 'bearer' })
+    ).body.data.pagination.total,
+  ).toBe(2);
   expect(data.finance).toEqual({
     paid: 100,
     outstanding: 500,

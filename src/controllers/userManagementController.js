@@ -6,6 +6,7 @@ import { Session } from '../models/Session.js';
 import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
 import { password } from '../validators/authValidator.js';
+import { deleteAccount } from '../services/accountDeletionService.js';
 
 export const manageableRoles = {
   super_admin: ['admin', 'manager', 'hr'],
@@ -88,4 +89,10 @@ export async function deactivateManagedUser(req, res) {
     AuditLog.create({ user: req.user.id, action: 'user_management.deactivated', entityType: 'user', entityId: user.id, details: { role: user.role } }),
   ]);
   res.json({ success: true, message: 'User deactivated successfully' });
+}
+
+export async function deleteManagedUser(req, res) {
+  const { confirmation } = z.object({ confirmation: z.string().email() }).strict().parse(req.body);
+  const data = await deleteAccount({ actor: req.user, targetId: req.params.id, channel: 'managed', confirmation });
+  res.json({ success: true, message: 'User and related records permanently deleted', data });
 }

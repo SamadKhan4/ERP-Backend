@@ -8,7 +8,8 @@ import { OnboardingDocument, onboardingDocumentTypes } from '../models/Onboardin
 import { EmployeeProfile } from '../models/EmployeeProfile.js';
 import { User } from '../models/User.js';
 import { AuditLog } from '../models/AuditLog.js';
-import { departments } from '../constants/departments.js';
+import { resolveDepartment } from '../services/departmentMasterService.js';
+import { auditDepartment } from '../services/departmentService.js';
 import { AppError } from '../utils/errors.js';
 import { nextEmployeeCode } from '../services/employeeCodeService.js';
 import { onboardingUploadRoot } from '../middleware/onboardingUpload.js';
@@ -35,7 +36,7 @@ const onboardingSchema = z.object({
     maritalStatus: optionalText(40),
   }).strict(),
   employment: z.object({
-    department: z.enum(departments.map(({ id }) => id)),
+    department: z.string().trim().min(1).max(100),
     designation: z.string().trim().min(2).max(120),
     employmentType: z.enum(['full_time', 'part_time', 'contract', 'intern']).default('full_time'),
     joiningDate: z.coerce.date(),
@@ -104,6 +105,7 @@ function progressFor(documents) {
 
 export async function createOnboarding(req, res) {
   const data = onboardingSchema.parse(req.body);
+  await resolveDepartment(data.employment.department, { active: true });
   const email = data.personal.email;
   const duplicate = await Promise.all([
     User.exists({ email }),
@@ -162,6 +164,8 @@ export async function updateOnboarding(req, res) {
     experience: req.body.experience ?? record.data.experience,
   };
   const data = onboardingSchema.parse(merged);
+  await resolveDepartment(data.employment.department, { active: record.department !== data.employment.department });
+  if (record.employee && data.employment.department !== record.department) throw new AppError(409, 'Use Employee Management to transfer an employee after login creation');
   if (record.employee && data.personal.email !== record.data.personal.email) throw new AppError(409, 'Login email cannot be changed after employee creation');
   if (data.personal.email !== record.data.personal.email && (await User.exists({ email: data.personal.email }))) throw new AppError(409, 'Email already belongs to an employee');
   record.title = data.personal.fullName;
@@ -328,6 +332,7 @@ export async function createEmployeeFromOnboarding(req, res) {
   if (!['Unassigned', 'In Progress', 'Onboarded', 'Completed'].includes(record.status)) throw new AppError(409, 'This onboarding case cannot create an employee');
   const email = record.data.personal.email;
   if (await User.exists({ email })) throw new AppError(409, 'ERP user already exists for this email');
+  await resolveDepartment(record.data.employment.department, { active: true });
   const user = await User.create({ name: record.data.personal.fullName, email, passwordHash: await bcrypt.hash(input.temporaryPassword, 12), role: input.role, department: record.data.employment.department, active: true });
   try {
     const profile = await EmployeeProfile.create({
@@ -356,6 +361,7 @@ export async function createEmployeeFromOnboarding(req, res) {
     record.updatedBy = req.user.id;
     await Promise.all([record.save(), OnboardingDocument.updateMany({ onboarding: record._id, deletedAt: null }, { employee: user._id })]);
     await audit(req, 'hrms.employee.created_from_onboarding', record._id, { employee: user._id });
+    await auditDepartment(req.user, await resolveDepartment(user.department), 'EMPLOYEE_ADDED', { employee: user._id, source: 'onboarding' });
     res.status(201).json({ success: true, message: 'Employee ID and login credentials created successfully', data: { onboarding: record, employee: { _id: user._id, name: user.name, email: user.email, role: user.role, department: user.department, active: user.active }, profile } });
   } catch (error) {
     await Promise.all([User.deleteOne({ _id: user._id }), EmployeeProfile.deleteOne({ user: user._id }), OnboardingDocument.updateMany({ onboarding: record._id }, { $unset: { employee: 1 } })]);

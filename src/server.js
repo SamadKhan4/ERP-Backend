@@ -5,6 +5,8 @@ import { env } from './config/env.js';
 import { connectDatabase } from './config/db.js';
 import { startAttendanceAutomation } from './services/attendanceAutomationService.js';
 import { startCRMReminders } from './services/crmReminderService.js';
+import { startFileDeletionWorker } from './services/fileDeletionService.js';
+let stopFileDeletionWorker = () => {};
 let stopCRMReminders = () => {};
 let retry;
 let stopAttendanceAutomation = () => {};
@@ -14,6 +16,7 @@ async function connect() {
     logger.info('MongoDB connected');
     stopAttendanceAutomation = startAttendanceAutomation();
     stopCRMReminders = startCRMReminders();
+    stopFileDeletionWorker = startFileDeletionWorker();
   } catch (err) {
     logger.warn(
       { err, event: 'database.retry' },
@@ -27,6 +30,7 @@ if (env.NODE_ENV === 'production') {
   logger.info({ event: 'database.connected' }, 'MongoDB connected');
   stopAttendanceAutomation = startAttendanceAutomation();
   stopCRMReminders = startCRMReminders();
+  stopFileDeletionWorker = startFileDeletionWorker();
 } else void connect();
 const server = app.listen(env.PORT, env.HOST, () =>
   logger.info(`Backend listening on http://${env.HOST}:${env.PORT}`),
@@ -39,6 +43,7 @@ async function shutdown() {
   clearTimeout(retry);
   stopAttendanceAutomation();
   stopCRMReminders();
+  stopFileDeletionWorker();
   const timeout = setTimeout(() => process.exit(1), 10000);
   timeout.unref();
   server.close(async () => {

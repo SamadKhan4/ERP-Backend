@@ -1,10 +1,9 @@
 import { z } from 'zod';
-import { departments } from '../constants/departments.js';
 import { hrmsResourceNames } from '../models/HRMSRecord.js';
 import { AppError } from '../utils/errors.js';
 
 const objectId = z.string().regex(/^[a-f0-9]{24}$/i, 'Invalid identifier');
-const department = z.enum(departments.map(({ id }) => id));
+const department = z.string().trim().min(1).max(100);
 const date = z.coerce.date();
 const shortText = z.string().trim().min(1).max(180);
 const optionalText = z.string().trim().max(1000).optional();

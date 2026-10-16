@@ -64,3 +64,7 @@ rolePermissionDefaults.team_leader.push('team.workspace.view', 'team.workspace.m
 rolePermissionDefaults.employee.push('team.tasks.self');
 rolePermissionDefaults.executive.push('team.tasks.self');
 rolePermissionDefaults.lead_caller.push('team.tasks.self');
+const departmentPermissions = ['departments.view','departments.create','departments.edit','departments.delete','departments.manage_members','departments.change_head','departments.view_analytics'];
+rolePermissionDefaults.admin.push(...departmentPermissions);
+rolePermissionDefaults.hr.push(...departmentPermissions.filter((permission)=>permission!=='departments.delete'));
+rolePermissionDefaults.manager.push('departments.view','departments.view_analytics');

@@ -3,7 +3,8 @@ import { HRMSRecord } from '../models/HRMSRecord.js';
 import { EmployeeProfile } from '../models/EmployeeProfile.js';
 import { User } from '../models/User.js';
 import { AuditLog } from '../models/AuditLog.js';
-import { departments } from '../constants/departments.js';
+import { Department } from '../models/Department.js';
+import { resolveDepartment } from '../services/departmentMasterService.js';
 import {
   hrmsResourceDefinitions,
   parseRecordCreate,
@@ -128,6 +129,7 @@ async function enforceUniqueBusinessKeys(resource, parsed, excludeId) {
 export async function createRecord(req, res) {
   definitionFor(req.params.resource);
   const parsed = parseRecordCreate(req.params.resource, req.body);
+  if (parsed.department) await resolveDepartment(parsed.department);
   await enforceUniqueBusinessKeys(req.params.resource, parsed);
   const record = await HRMSRecord.create({
     module: req.params.resource,
@@ -163,6 +165,7 @@ export async function updateRecord(req, res) {
     { data: parsed.data || record.data },
     record.id,
   );
+  if (parsed.department) await resolveDepartment(parsed.department);
   Object.assign(record, parsed, { updatedBy: req.user.id });
   await record.save();
   await audit(req, `hrms.${req.params.resource}.updated`, record);
@@ -313,7 +316,7 @@ export async function dashboard(req, res) {
     seriesByDay.set(key, row);
   }
   const departmentNames = Object.fromEntries(
-    departments.map(({ id, name }) => [id, name]),
+    (await Department.find().select('key name').lean()).map(({ key, name }) => [key, name]),
   );
   const birthdays = profiles
     .filter(({ user }) => user?.active)

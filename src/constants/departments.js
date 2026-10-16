@@ -4,4 +4,5 @@ export const departments = [
   { id: 'graphics', name: 'Graphics' },
   { id: 'video_editing', name: 'Video Editing' },
   { id: 'seo', name: 'SEO Team' },
+  { id: 'bde', name: 'Business Development Executive (BDE)' },
 ];

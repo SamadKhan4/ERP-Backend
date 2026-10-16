@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "seed:admin": "node src/scripts/seedAdmin.js",
     "sync:roles": "node src/scripts/syncRoles.js",
+    "migrate:departments": "node src/scripts/migrateDepartments.js",
     "test": "vitest run"
   },
   "dependencies": {
