@@ -1,8 +1,26 @@
+import { MailAccount,SharedMailboxAccess } from '../models/Mailbox.js';
+import {
+  ProjectFile,
+  ProjectNote,
+  ProjectMilestone,
+} from '../models/ProjectWork.js';
 import mongoose from 'mongoose';
 import { User } from '../models/User.js';
 import { Session } from '../models/Session.js';
 import { MailJob } from '../models/MailJob.js';
 import { OutgoingMail } from '../models/OutgoingMail.js';
+import {
+  FinancePayment,
+  FinanceExpense,
+  FinanceRecurring,
+  FinanceFollowUp,
+  FinanceDocument,
+} from '../models/Finance.js';
+import {
+  SavedReport,
+  ScheduledReport,
+  ReportGenerationLog,
+} from '../models/ReportConfiguration.js';
 import { EmployeeProfile } from '../models/EmployeeProfile.js';
 import { HRMSRecord } from '../models/HRMSRecord.js';
 import { LeaveLedger } from '../models/LeaveLedger.js';
@@ -236,6 +254,26 @@ export async function deleteAccount({
         .select('attachments')
         .session(session)
         .lean();
+      const financeExpenses = await FinanceExpense.find({
+        $or: [
+          { createdBy: user },
+          { employee: user },
+          { client: { $in: ids(clients) } },
+          { project: { $in: ids(projects) } },
+        ],
+      })
+        .select('_id')
+        .session(session)
+        .lean();
+      const financeDocuments = await FinanceDocument.find({
+        $or: [
+          { invoice: { $in: ids(invoices) } },
+          { expense: { $in: ids(financeExpenses) } },
+        ],
+      })
+        .select('+storedName')
+        .session(session)
+        .lean();
       const allIds = [
         user,
         ...ids(leads),
@@ -250,7 +288,18 @@ export async function deleteAccount({
         ...ids(followups),
         ...ids(payroll),
       ];
+      const projectFiles = await ProjectFile.find({
+        project: { $in: ids(projects) },
+      })
+        .select('+storedName')
+        .session(session)
+        .lean();
       const files = [
+        ...projectFiles.map((file) => ({ kind: 'crm', name: file.storedName })),
+        ...financeDocuments.map((document) => ({
+          kind: 'crm',
+          name: document.storedName,
+        })),
         ...documents.map((document) => ({
           kind: 'onboarding',
           name: document.storedName,
@@ -282,11 +331,30 @@ export async function deleteAccount({
           await Model.deleteMany(filter).session(session)
         ).deletedCount;
       };
+      await MailAccount.updateMany({type:'PERSONAL',user},{$set:{isActive:false,syncStatus:'DISCONNECTED',syncError:'Owner offboarded'},$unset:{encryptedPassword:'',lease:'',lockedUntil:''}}).session(session);
+      await SharedMailboxAccess.deleteMany({user}).session(session);
       // Run sequentially: MongoDB does not support parallel operations in a transaction.
       for (const [Model, filter] of [
         [Session, { user }],
         [MailJob, { user }],
         [OutgoingMail, { user }],
+        [FinancePayment, { invoice: { $in: ids(invoices) } }],
+        [FinanceFollowUp, { invoice: { $in: ids(invoices) } }],
+        [FinanceDocument, { _id: { $in: ids(financeDocuments) } }],
+        [FinanceExpense, { _id: { $in: ids(financeExpenses) } }],
+        [
+          FinanceRecurring,
+          {
+            $or: [
+              { createdBy: user },
+              { client: { $in: ids(clients) } },
+              { project: { $in: ids(projects) } },
+            ],
+          },
+        ],
+        [SavedReport, { owner: user }],
+        [ScheduledReport, { createdBy: user }],
+        [ReportGenerationLog, { user }],
         [EmployeeProfile, { user }],
         [HRMSRecord, { _id: { $in: ids(hr) } }],
         [OnboardingDocument, { _id: { $in: ids(documents) } }],
@@ -304,6 +372,9 @@ export async function deleteAccount({
           },
         ],
         [Invoice, { _id: { $in: ids(invoices) } }],
+        [ProjectFile, { project: { $in: ids(projects) } }],
+        [ProjectNote, { project: { $in: ids(projects) } }],
+        [ProjectMilestone, { project: { $in: ids(projects) } }],
         [Project, { _id: { $in: ids(projects) } }],
         [Quotation, { _id: { $in: ids(quotations) } }],
         [Client, { _id: { $in: ids(clients) } }],
@@ -327,7 +398,7 @@ export async function deleteAccount({
       // Shared records authored/reviewed by this user belong to other employees.
       // Keep them and transfer required attribution; clear optional references.
       for (const Model of Object.values(mongoose.models)) {
-        if (Model === User) continue;
+        if (Model === User || ['MailAccount','MailMessage','MailFolder','MailSendJob','SharedMailboxAccess'].includes(Model.modelName)) continue;
         const updates = [];
         Model.schema.eachPath((field, type) => {
           if (type.options.ref === 'User' && !field.includes('.'))
@@ -421,8 +492,25 @@ export async function deleteAccount({
         ).session(session);
       }
       if (target.department) {
-        const department = await Department.findOne({ key: target.department }).session(session);
-        if (department) await AuditLog.create([{ user: actor._id, entityType: 'department', entityId: department._id, action: 'EMPLOYEE_REMOVED', details: { reason: 'Account permanently deleted', previousDepartment: target.department } }], { session });
+        const department = await Department.findOne({
+          key: target.department,
+        }).session(session);
+        if (department)
+          await AuditLog.create(
+            [
+              {
+                user: actor._id,
+                entityType: 'department',
+                entityId: department._id,
+                action: 'EMPLOYEE_REMOVED',
+                details: {
+                  reason: 'Account permanently deleted',
+                  previousDepartment: target.department,
+                },
+              },
+            ],
+            { session },
+          );
       }
       await remove(User, { _id: user });
       await AuditLog.create(

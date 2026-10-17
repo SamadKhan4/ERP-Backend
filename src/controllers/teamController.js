@@ -1,3 +1,4 @@
+import { Project } from '../models/Project.js';
 import { z } from 'zod';
 import { User } from '../models/User.js';
 import { EmployeeProfile } from '../models/EmployeeProfile.js';
@@ -70,90 +71,113 @@ export async function workspace(req, res) {
   const day = indiaDate();
   const start = new Date(`${day}T00:00:00+05:30`);
   const end = new Date(start.getTime() + 86400000);
-  const [sprints, summary, workload, standups, attendance, reports, activity, sprintProgress] =
-    await Promise.all([
-      TeamSprint.find({ leader: team.leader._id })
-        .sort({ createdAt: -1 })
-        .limit(30)
-        .lean(),
-      TeamTask.aggregate([
-        { $match: { leader: team.leader._id, deletedAt: null } },
-        {
-          $group: {
-            _id: '$status',
-            count: { $sum: 1 },
-            points: { $sum: '$points' },
-            overdue: {
-              $sum: {
-                $cond: [
-                  {
-                    $and: [
-                      { $ne: ['$status', 'DONE'] },
-                      { $ne: ['$dueDate', null] },
-                      { $lt: ['$dueDate', new Date()] },
-                    ],
-                  },
-                  1,
-                  0,
-                ],
-              },
+  const [
+    sprints,
+    summary,
+    workload,
+    standups,
+    attendance,
+    reports,
+    activity,
+    sprintProgress,
+  ] = await Promise.all([
+    TeamSprint.find({ leader: team.leader._id })
+      .sort({ createdAt: -1 })
+      .limit(30)
+      .lean(),
+    TeamTask.aggregate([
+      { $match: { leader: team.leader._id, deletedAt: null } },
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          points: { $sum: '$points' },
+          overdue: {
+            $sum: {
+              $cond: [
+                {
+                  $and: [
+                    { $ne: ['$status', 'DONE'] },
+                    { $ne: ['$dueDate', null] },
+                    { $lt: ['$dueDate', new Date()] },
+                  ],
+                },
+                1,
+                0,
+              ],
             },
           },
         },
-      ]),
-      TeamTask.aggregate([
-        {
-          $match: {
-            leader: team.leader._id,
-            deletedAt: null,
-            status: { $ne: 'DONE' },
+      },
+    ]),
+    TeamTask.aggregate([
+      {
+        $match: {
+          leader: team.leader._id,
+          deletedAt: null,
+          status: { $ne: 'DONE' },
+        },
+      },
+      {
+        $group: {
+          _id: '$assignedTo',
+          tasks: { $sum: 1 },
+          points: { $sum: '$points' },
+          blocked: {
+            $sum: { $cond: [{ $eq: ['$status', 'BLOCKED'] }, 1, 0] },
           },
         },
-        {
-          $group: {
-            _id: '$assignedTo',
-            tasks: { $sum: 1 },
-            points: { $sum: '$points' },
-            blocked: {
-              $sum: { $cond: [{ $eq: ['$status', 'BLOCKED'] }, 1, 0] },
-            },
-          },
+      },
+    ]),
+    TeamStandup.find({
+      leader: team.leader._id,
+      date: day,
+      employee: { $in: team.ids },
+    })
+      .populate('employee', 'name')
+      .lean(),
+    HRMSRecord.find({
+      module: 'attendance',
+      employee: { $in: team.ids },
+      deletedAt: null,
+      'data.date': { $gte: start, $lt: end },
+    })
+      .select('employee data.checkIn data.checkOut data.minutesWorked status')
+      .lean(),
+    HRMSRecord.find({
+      module: 'daily-reports',
+      employee: { $in: team.ids },
+      deletedAt: null,
+      'data.date': { $gte: start, $lt: end },
+    })
+      .select('employee data.summary data.blockers data.completedTasks')
+      .lean(),
+    AuditLog.find({
+      entityType: 'team',
+      'details.leader': String(team.leader._id),
+    })
+      .select('action details createdAt user')
+      .populate('user', 'name')
+      .sort({ createdAt: -1 })
+      .limit(25)
+      .lean(),
+    TeamTask.aggregate([
+      {
+        $match: {
+          leader: team.leader._id,
+          deletedAt: null,
+          sprint: { $ne: null },
         },
-      ]),
-      TeamStandup.find({
-        leader: team.leader._id,
-        date: day,
-        employee: { $in: team.ids },
-      })
-        .populate('employee', 'name')
-        .lean(),
-      HRMSRecord.find({
-        module: 'attendance',
-        employee: { $in: team.ids },
-        deletedAt: null,
-        'data.date': { $gte: start, $lt: end },
-      })
-        .select('employee data.checkIn data.checkOut data.minutesWorked status')
-        .lean(),
-      HRMSRecord.find({
-        module: 'daily-reports',
-        employee: { $in: team.ids },
-        deletedAt: null,
-        'data.date': { $gte: start, $lt: end },
-      })
-        .select('employee data.summary data.blockers data.completedTasks')
-        .lean(),
-      AuditLog.find({
-        entityType: 'team',
-        'details.leader': String(team.leader._id),
-      })
-        .select('action details createdAt user')
-        .populate('user', 'name')
-        .sort({ createdAt: -1 })
-        .limit(25)
-        .lean(),
-      TeamTask.aggregate([{ $match: { leader: team.leader._id, deletedAt: null, sprint: { $ne: null } } }, { $group: { _id: { sprint: '$sprint', status: '$status' }, tasks: { $sum: 1 }, points: { $sum: '$points' } } }]),
-    ]);
+      },
+      {
+        $group: {
+          _id: { sprint: '$sprint', status: '$status' },
+          tasks: { $sum: 1 },
+          points: { $sum: '$points' },
+        },
+      },
+    ]),
+  ]);
   res.json({
     success: true,
     data: {
@@ -260,7 +284,22 @@ async function notifyTask(req, task, previousOwner, session) {
       ],
       { session },
     );
-  if (previousOwner && String(previousOwner) !== String(task.assignedTo)) await Notification.create([{ recipient: previousOwner, type: 'team_task_reassigned', title: 'Task assignment changed', message: `${task.taskId}: ${task.title}`, link: '/employee#tasks', entityType: 'task', entityId: task._id, createdBy: req.user._id }], { session });
+  if (previousOwner && String(previousOwner) !== String(task.assignedTo))
+    await Notification.create(
+      [
+        {
+          recipient: previousOwner,
+          type: 'team_task_reassigned',
+          title: 'Task assignment changed',
+          message: `${task.taskId}: ${task.title}`,
+          link: '/employee#tasks',
+          entityType: 'task',
+          entityId: task._id,
+          createdBy: req.user._id,
+        },
+      ],
+      { session },
+    );
 }
 export async function createTask(req, res) {
   const input = createTaskSchema.parse(req.body);
@@ -312,7 +351,51 @@ export async function updateTask(req, res) {
       ...(self ? { assignedTo: req.user._id } : { leader: team.leader._id }),
     }).session(session);
     if (!task) throw new AppError(404, 'Task not found or access denied');
-    if (self) await requireMyTeam(req, task.leader);
+    if (task.project) {
+      const project = await Project.findOneAndUpdate(
+        {
+          _id: task.project,
+          archivedAt: null,
+          status: {
+            $nin: ['COMPLETED', 'CANCELLED', 'Completed', 'Cancelled'],
+          },
+        },
+        { $inc: { revision: 1 } },
+        { session },
+      );
+      if (!project)
+        throw new AppError(
+          409,
+          'Project is closed; reopen before changing tasks',
+        );
+      if (
+        ![
+          project.projectManager,
+          project.assignedTo,
+          ...project.teamMembers
+            .filter((m) => m.status === 'ACTIVE')
+            .map((m) => m.employee),
+        ]
+          .filter(Boolean)
+          .map(String)
+          .includes(String(req.user._id))
+      )
+        throw new AppError(403, 'You are no longer an active project member');
+      if (changesProjectAssignee(req.body, task, project))
+        throw new AppError(
+          400,
+          'Assign project tasks only to active project members',
+        );
+      if (
+        req.body.status === 'DONE' &&
+        (await TeamTask.exists({
+          _id: { $in: task.dependsOn },
+          deletedAt: null,
+          status: { $ne: 'DONE' },
+        }).session(session))
+      )
+        throw new AppError(409, 'Complete task dependencies first');
+    } else if (self) await requireMyTeam(req, task.leader);
     if (task.version !== input.version)
       throw new AppError(409, 'This task changed. Refresh and try again.');
     if (
@@ -342,6 +425,22 @@ export async function updateTask(req, res) {
       task.status === 'DONE' ? task.completedAt || new Date() : null;
     if (task.status !== 'BLOCKED') task.blocker = '';
     await task.save({ session });
+    if (task.project)
+      await AuditLog.create(
+        [
+          {
+            user: req.user._id,
+            action:
+              task.status === 'DONE'
+                ? 'project.TASK_COMPLETED'
+                : 'project.TASK_UPDATED',
+            entityType: 'project',
+            entityId: task.project,
+            details: { task: task._id, title: task.title },
+          },
+        ],
+        { session },
+      );
     await audit(
       req,
       'task.updated',
@@ -369,8 +468,49 @@ export async function updateTask(req, res) {
         ],
         { session },
       );
-    if (before.status !== task.status && ['REVIEW', 'DONE'].includes(task.status) && String(task.leader) !== req.user.id) await Notification.create([{ recipient: task.leader, type: 'team_task_progress', title: task.status === 'DONE' ? 'Team task completed' : 'Task ready for review', message: `${task.taskId}: ${task.title}`, link: '/team', entityType: 'task', entityId: task._id, createdBy: req.user._id }], { session });
-    if (task.assignedTo && String(task.assignedTo) !== req.user.id && String(previousOwner) === String(task.assignedTo)) await Notification.create([{ recipient: task.assignedTo, type: 'team_task_updated', title: 'Your team task was updated', message: `${task.taskId}: ${task.title}`, link: '/employee#tasks', entityType: 'task', entityId: task._id, createdBy: req.user._id }], { session });
+    if (
+      before.status !== task.status &&
+      ['REVIEW', 'DONE'].includes(task.status) &&
+      String(task.leader) !== req.user.id
+    )
+      await Notification.create(
+        [
+          {
+            recipient: task.leader,
+            type: 'team_task_progress',
+            title:
+              task.status === 'DONE'
+                ? 'Team task completed'
+                : 'Task ready for review',
+            message: `${task.taskId}: ${task.title}`,
+            link: '/team',
+            entityType: 'task',
+            entityId: task._id,
+            createdBy: req.user._id,
+          },
+        ],
+        { session },
+      );
+    if (
+      task.assignedTo &&
+      String(task.assignedTo) !== req.user.id &&
+      String(previousOwner) === String(task.assignedTo)
+    )
+      await Notification.create(
+        [
+          {
+            recipient: task.assignedTo,
+            type: 'team_task_updated',
+            title: 'Your team task was updated',
+            message: `${task.taskId}: ${task.title}`,
+            link: '/employee#tasks',
+            entityType: 'task',
+            entityId: task._id,
+            createdBy: req.user._id,
+          },
+        ],
+        { session },
+      );
     return task;
   });
   res.json({ success: true, message: 'Task updated', data: result });
@@ -502,20 +642,26 @@ export async function myWork(req, res) {
     .populate('manager', 'name active role')
     .lean();
   const leader =
-    req.user.role === 'team_leader' ? { _id: req.user._id, name: req.user.name } : profile?.manager?.active && profile.manager.role === 'team_leader'
-      ? profile.manager
-      : null;
+    req.user.role === 'team_leader'
+      ? { _id: req.user._id, name: req.user.name }
+      : profile?.manager?.active && profile.manager.role === 'team_leader'
+        ? profile.manager
+        : null;
   const filter = {
     assignedTo: req.user._id,
     deletedAt: null,
-    ...(leader ? { leader: leader._id } : { _id: null }),
+    $or: [
+      { project: { $ne: null } },
+      ...(leader ? [{ leader: leader._id }] : []),
+    ],
     ...(view === 'open'
       ? { status: { $ne: 'DONE' } }
       : view === 'done'
         ? { status: 'DONE' }
         : {}),
   };
-  const summaryFilter = { ...filter }; delete summaryFilter.status;
+  const summaryFilter = { ...filter };
+  delete summaryFilter.status;
   const [tasks, total, standup, summary] = await Promise.all([
     TeamTask.find(filter)
       .populate('sprint', 'title status')
@@ -531,7 +677,10 @@ export async function myWork(req, res) {
           date: indiaDate(),
         }).lean()
       : null,
-    TeamTask.aggregate([{ $match: summaryFilter }, { $group: { _id: '$status', count: { $sum: 1 } } }]),
+    TeamTask.aggregate([
+      { $match: summaryFilter },
+      { $group: { _id: '$status', count: { $sum: 1 } } },
+    ]),
   ]);
   res.json({
     success: true,
@@ -559,6 +708,21 @@ export async function archiveTask(req, res) {
       deletedAt: null,
     }).session(session);
     if (!task) throw new AppError(404, 'Task not found');
+    if (
+      task.project &&
+      !(await Project.findOneAndUpdate(
+        {
+          _id: task.project,
+          archivedAt: null,
+          status: {
+            $nin: ['COMPLETED', 'CANCELLED', 'Completed', 'Cancelled'],
+          },
+        },
+        { $inc: { revision: 1 } },
+        { session },
+      ))
+    )
+      throw new AppError(409, 'Closed project tasks cannot be archived');
     if (task.version !== version)
       throw new AppError(409, 'This task changed. Refresh and try again.');
     if (
@@ -573,6 +737,22 @@ export async function archiveTask(req, res) {
     task.deletedAt = new Date();
     task.version += 1;
     await task.save({ session });
+    if (task.project)
+      await AuditLog.create(
+        [
+          {
+            user: req.user._id,
+            action:
+              task.status === 'DONE'
+                ? 'project.TASK_COMPLETED'
+                : 'project.TASK_UPDATED',
+            entityType: 'project',
+            entityId: task.project,
+            details: { task: task._id, title: task.title },
+          },
+        ],
+        { session },
+      );
     await audit(
       req,
       'task.archived',
@@ -716,4 +896,21 @@ export async function assignMember(req, res) {
       ? 'Member removed; open tasks left for reassignment'
       : 'Reporting manager assigned',
   });
+}
+
+function changesProjectAssignee(body, task, project) {
+  return (
+    body.assignedTo &&
+    String(body.assignedTo) !== String(task.assignedTo) &&
+    ![
+      project.projectManager,
+      project.assignedTo,
+      ...project.teamMembers
+        .filter((m) => m.status === 'ACTIVE')
+        .map((m) => m.employee),
+    ]
+      .filter(Boolean)
+      .map(String)
+      .includes(String(body.assignedTo))
+  );
 }

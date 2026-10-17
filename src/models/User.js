@@ -26,5 +26,6 @@ const schema = new mongoose.Schema(
 );
 schema.index({ department: 1, _id: -1 });
 schema.index({ departmentId: 1, active: 1 });
+schema.index({ role: 1, createdAt: -1 });
 departmentReferenceHooks(schema);
 export const User = mongoose.model('User', schema);

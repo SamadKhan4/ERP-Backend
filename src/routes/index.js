@@ -1,3 +1,5 @@
+import { mailboxRouter } from './mailboxRoutes.js';
+import { projectRouter } from './projectRoutes.js';
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import mongoose from 'mongoose';
@@ -17,6 +19,8 @@ import * as quotations from '../controllers/quotationController.js';
 import * as invoices from '../controllers/invoiceController.js';
 import * as notifications from '../controllers/notificationController.js';
 import { overview } from '../controllers/dashboardController.js';
+import { reportRouter } from './reportRoutes.js';
+import { financeRouter } from './financeRoutes.js';
 import * as mail from '../controllers/mailController.js';
 import * as outgoingMail from '../controllers/outgoingMailController.js';
 export const router = Router();
@@ -62,6 +66,9 @@ router.use('/auth', authRouter);
 router.use('/hrms', hrmsRouter);
 router.use('/crm', crmRouter);
 router.use('/team', teamRouter);
+router.use('/reports', reportRouter);
+router.use('/finance', financeRouter);
+router.use('/projects', projectRouter);
 router.get('/dashboard/overview', authenticate, authorize('dashboard.view'), overview);
 router.get('/notifications', authenticate, notifications.listNotifications);
 router.patch('/notifications/read-all', authenticate, notifications.markAllNotificationsRead);
@@ -79,9 +86,10 @@ router.get('/invoices/:id', authenticate, authorize('invoices.read'), invoices.g
 router.put('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.updateInvoice);
 router.delete('/invoices/:id', authenticate, authorize('invoices.manage'), invoices.deleteInvoice);
 router.get('/user-management', authenticate, userManagement.listManagedUsers);
+router.use('/mail', mailboxRouter);
 router.get('/mail', authenticate, mail.list);
 router.get('/mail/sent', authenticate, outgoingMail.history);
-router.post('/mail/send', authenticate, rateLimit({ windowMs: 3600000, limit: 30, keyGenerator: (req) => String(req.user._id) }), outgoingMail.send);
+
 router.post('/mail/users/:id/welcome', authenticate, rateLimit({ windowMs: 60000, limit: 10 }), mail.resend);
 router.post('/user-management', authenticate, userManagement.createManagedUser);
 router.patch('/user-management/:id', authenticate, userManagement.updateManagedUser);

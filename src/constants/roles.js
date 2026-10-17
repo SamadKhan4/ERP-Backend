@@ -1,4 +1,8 @@
+import { mailPermissions } from '../mailbox/mailPermissions.js';
+import { projectPermissions } from '../projects/projectPermissions.js';
 import { crmPermissions } from '../../shared/crm.js';
+import { reportPermissionNames } from '../reports/reportRegistry.js';
+import { financePermissions } from '../finance/financePermissions.js';
 export const roleDefinitions = [
   { name: 'super_admin', label: 'Super Admin' },
   { name: 'admin', label: 'Admin' },
@@ -68,3 +72,21 @@ const departmentPermissions = ['departments.view','departments.create','departme
 rolePermissionDefaults.admin.push(...departmentPermissions);
 rolePermissionDefaults.hr.push(...departmentPermissions.filter((permission)=>permission!=='departments.delete'));
 rolePermissionDefaults.manager.push('departments.view','departments.view_analytics');
+const reporting = ['reports.view', 'reports.generate', 'reports.export', 'reports.manage_templates', 'reports.schedule'];
+const grants = (role, categories, scope, extra = []) => rolePermissionDefaults[role].push(...reporting, ...categories.flatMap((category) => [`reports.${category}.view`, `reports.${category}.${scope}`, `reports.${category}.export`]), ...extra);
+rolePermissionDefaults.admin.push(...reportPermissionNames);
+rolePermissionDefaults.admin.push(...financePermissions);
+grants('hr', ['hr', 'departments', 'users'], 'all', ['reports.hr.employees', 'reports.hr.attendance', 'reports.hr.leave', 'reports.hr.timesheets', 'reports.hr.payroll']);
+grants('manager', ['hr', 'departments', 'projects', 'crm', 'management'], 'team', ['reports.hr.employees', 'reports.hr.attendance', 'reports.hr.leave', 'reports.hr.timesheets', 'reports.crm.leads', 'reports.crm.performance']);
+grants('team_leader', ['hr', 'departments', 'projects'], 'team', ['reports.hr.employees', 'reports.hr.attendance', 'reports.hr.leave', 'reports.hr.timesheets']);
+grants('employee', ['hr', 'projects'], 'own', ['reports.hr.attendance', 'reports.hr.leave', 'reports.hr.timesheets']);
+grants('executive', ['hr', 'projects', 'crm'], 'own', ['reports.hr.attendance', 'reports.hr.leave', 'reports.hr.timesheets', 'reports.crm.leads', 'reports.crm.performance']);
+grants('lead_caller', ['projects', 'crm'], 'own', ['reports.crm.leads', 'reports.crm.performance']);
+
+rolePermissionDefaults.admin.push(...projectPermissions.filter(p=>p!=='projects.access.manage'));
+rolePermissionDefaults.manager.push(...projectPermissions.filter(p=>!['projects.view_all','projects.view_department','projects.delete','projects.financials.view','projects.access.manage'].includes(p)));
+for(const role of ['team_leader','employee','executive']) rolePermissionDefaults[role].push('projects.view','projects.view_assigned','projects.tasks.view','projects.tasks.complete','projects.files.view','projects.files.manage');
+rolePermissionDefaults.team_leader.push('projects.tasks.create','projects.tasks.assign','projects.tasks.edit','projects.milestones.manage','projects.reports.view');
+
+for(const role of roles.filter(r=>r!=='super_admin'))rolePermissionDefaults[role].push(...mailPermissions.filter(p=>!p.startsWith('mail.admin.')&&!p.startsWith('mail.shared.assign')&&!p.startsWith('mail.shared.manage_permissions')));
+rolePermissionDefaults.admin.push(...mailPermissions);

@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 const schema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   recipient: { type: String, required: true },
+  invoice: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
   subject: { type: String, required: true, maxlength: 200 },
   text: { type: String, required: true, maxlength: 20000 },
   status: { type: String, enum: ['PENDING', 'PROCESSING', 'SENT', 'FAILED', 'CANCELLED'], default: 'PENDING' },

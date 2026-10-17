@@ -3,6 +3,9 @@ import { OutgoingMail } from '../models/OutgoingMail.js';
 import { User } from '../models/User.js';
 import { env } from '../config/env.js';
 import { mailTransport } from './mailTransportService.js';
+import { financeAccess, hasFinance } from '../finance/financeAccess.js';
+import { findFinanceInvoice } from '../finance/financeService.js';
+import { financeInvoicePdf } from '../finance/financePdfService.js';
 export async function processOutgoingMail(limit = 10) {
   if (env.MAIL_DELIVERY !== 'smtp') return;
   for (let index = 0; index < limit; index++) {
@@ -14,12 +17,20 @@ export async function processOutgoingMail(limit = 10) {
     if (!job) return;
     const filter = { _id: job._id, lease };
     try {
-      const user = await User.findById(job.user).select('active');
+      const user = await User.findById(job.user).select('active role department');
       if (!user?.active) {
         await OutgoingMail.updateOne(filter, { $set: { status: 'CANCELLED' }, $unset: { lease: 1, lockedUntil: 1 } });
         continue;
       }
-      const result = await mailTransport().sendMail({ from: env.MAIL_FROM, to: job.recipient, subject: job.subject, text: job.text });
+      let attachments;
+      if (job.invoice) {
+        const req = { user }; await financeAccess(req, {}, () => {});
+        if (!hasFinance(req, 'finance.invoices.view') || !hasFinance(req, 'finance.invoices.edit')) throw new Error('Invoice email permission revoked');
+        const invoice = await findFinanceInvoice(req, job.invoice);
+        if (invoice.status === 'Cancelled' || invoice.client.email !== job.recipient) throw new Error('Invoice recipient or status changed');
+        attachments = [{ filename: `invoice-${invoice._id}.pdf`, content: await financeInvoicePdf(invoice), contentType: 'application/pdf' }];
+      }
+      const result = await mailTransport().sendMail({ from: env.MAIL_FROM, to: job.recipient, subject: job.subject, text: job.text, ...(attachments ? { attachments } : {}) });
       if (!result.accepted?.length) throw new Error('Recipient not accepted');
       await OutgoingMail.updateOne(filter, { $set: { status: 'SENT', sentAt: new Date() }, $unset: { lease: 1, lockedUntil: 1, lastError: 1 } });
     } catch {

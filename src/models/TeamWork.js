@@ -43,6 +43,12 @@ const task = new mongoose.Schema(
     dueDate: Date,
     blocker: String,
     acceptanceCriteria: String,
+    department: ref('Department'),
+    client: ref('Client'),
+    startDate: Date,
+    estimatedHours: { type: Number, min: 0 },
+    actualHours: { type: Number, min: 0 },
+    dependsOn: [{ type: mongoose.Schema.Types.ObjectId, ref: 'TeamTask' }],
     completedAt: Date,
     createdBy: ref('User'),
     version: { type: Number, default: 0 },
@@ -52,6 +58,7 @@ const task = new mongoose.Schema(
 );
 task.index({ leader: 1, deletedAt: 1, sprint: 1, status: 1 });
 task.index({ assignedTo: 1, deletedAt: 1, dueDate: 1 });
+task.index({ project: 1, deletedAt: 1, status: 1 });
 export const TeamTask = mongoose.model('TeamTask', task);
 const standup = new mongoose.Schema(
   {

@@ -6,6 +6,8 @@ import { AuditLog } from '../models/AuditLog.js';
 import { AppError } from '../utils/errors.js';
 import { streamInvoicePdf } from '../services/invoicePdfService.js';
 import { billingReferences } from '../services/billingReferenceService.js';
+import { FinancePayment } from '../models/Finance.js';
+import { invoiceAmounts } from '../finance/financeMoney.js';
 
 const bodySchema = z
   .object({
@@ -66,9 +68,8 @@ const listSchema = z
   .strict();
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const totals = (items, gstRate) => {
-  const subtotal = items.reduce((sum, item) => sum + item.amount, 0);
-  const gstAmount = Math.round(((subtotal * gstRate) / 100) * 100) / 100;
-  return { subtotal, gstAmount, grandTotal: subtotal + gstAmount };
+  const amounts = invoiceAmounts(items.map((item) => ({ description: item.title, quantity: '1', rate: String(item.amount), taxRate: String(gstRate) })), 'INTER_STATE');
+  return { subtotal: amounts.subtotalMinor / 100, gstAmount: amounts.taxMinor / 100, grandTotal: amounts.totalMinor / 100 };
 };
 const ensureId = (id) => {
   if (!mongoose.isValidObjectId(id))
@@ -164,6 +165,7 @@ export async function getInvoice(req, res) {
 }
 export async function createInvoice(req, res) {
   const input = bodySchema.parse(req.body);
+  if (input.status === 'Paid') throw new AppError(400, 'Record a payment in Finance to settle the invoice');
   const invoice = await Invoice.create({
     ...input,
     ...(await billingReferences(input)),
@@ -184,6 +186,8 @@ export async function createInvoice(req, res) {
 export async function updateInvoice(req, res) {
   const input = bodySchema.parse(req.body);
   const invoice = await findInvoice(req.params.id);
+  if (input.status === 'Paid') throw new AppError(400, 'Record a payment in Finance to settle the invoice');
+  if (invoice.financeVersion || invoice.paidMinor || invoice.status === 'Paid' || await FinancePayment.exists({ invoice: invoice._id })) throw new AppError(409, 'Use Finance Management for invoices with financial history');
   if (
     (input.quotation && String(invoice.quotation) !== input.quotation) ||
     (input.project && String(invoice.project) !== input.project)
@@ -202,6 +206,7 @@ export async function updateInvoice(req, res) {
 }
 export async function deleteInvoice(req, res) {
   const invoice = await findInvoice(req.params.id);
+  if (invoice.financeVersion || invoice.paidMinor || invoice.status === 'Paid' || await FinancePayment.exists({ invoice: invoice._id })) throw new AppError(409, 'Use Finance cancellation; financial history cannot be archived');
   invoice.deletedAt = new Date();
   invoice.updatedBy = req.user.id;
   await invoice.save();

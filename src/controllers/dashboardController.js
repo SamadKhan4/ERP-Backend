@@ -69,10 +69,10 @@ export async function overview(req, res) {
         $group: {
           _id: null,
           paid: {
-            $sum: { $cond: [{ $eq: ['$status', 'Paid'] }, '$grandTotal', 0] },
+            $sum: { $ifNull: [{ $divide: ['$paidMinor', 100] }, { $cond: [{ $eq: ['$status', 'Paid'] }, '$grandTotal', 0] }] },
           },
           outstanding: {
-            $sum: { $cond: [{ $ne: ['$status', 'Paid'] }, '$grandTotal', 0] },
+            $sum: { $max: [0, { $subtract: ['$grandTotal', { $ifNull: [{ $divide: ['$paidMinor', 100] }, { $cond: [{ $eq: ['$status', 'Paid'] }, '$grandTotal', 0] }] }] }] },
           },
           overdue: {
             $sum: {
@@ -83,7 +83,7 @@ export async function overview(req, res) {
                     { $lt: ['$dueDate', today] },
                   ],
                 },
-                '$grandTotal',
+                { $max: [0, { $subtract: ['$grandTotal', { $divide: [{ $ifNull: ['$paidMinor', 0] }, 100] }] }] },
                 0,
               ],
             },
@@ -126,7 +126,7 @@ export async function overview(req, res) {
           },
           billed: { $sum: '$grandTotal' },
           paid: {
-            $sum: { $cond: [{ $eq: ['$status', 'Paid'] }, '$grandTotal', 0] },
+            $sum: { $ifNull: [{ $divide: ['$paidMinor', 100] }, { $cond: [{ $eq: ['$status', 'Paid'] }, '$grandTotal', 0] }] },
           },
         },
       },

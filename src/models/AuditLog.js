@@ -13,4 +13,5 @@ export const AuditLog = mongoose.model(
   ),
 );
 AuditLog.schema.index({ createdAt: -1 });
+AuditLog.schema.index({ user: 1, action: 1, createdAt: -1 });
 AuditLog.schema.index({ entityType: 1, entityId: 1, createdAt: -1 });

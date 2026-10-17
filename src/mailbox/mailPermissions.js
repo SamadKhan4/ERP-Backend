@@ -1,0 +1,25 @@
+export const mailPermissions = [
+  'mail.use',
+  'mail.compose',
+  'mail.send',
+  'mail.reply',
+  'mail.forward',
+  'mail.download_attachment',
+  'mail.personal.connect',
+  'mail.personal.disconnect',
+  'mail.shared.use',
+  'mail.admin.accounts.view_metadata',
+  'mail.admin.accounts.manage',
+  'mail.admin.sync.view',
+  'mail.admin.sync.retry',
+  'mail.shared.assign',
+  'mail.shared.manage_permissions',
+];
+export const sharedOperations = [
+  'READ',
+  'SEND',
+  'REPLY',
+  'FORWARD',
+  'ARCHIVE',
+  'TRASH',
+];

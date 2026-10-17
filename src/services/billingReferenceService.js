@@ -9,7 +9,16 @@ export async function billingReferences(input) {
   const project = input.project ? await Project.findById(input.project) : null;
   if ((input.quotation && !quotation) || (input.project && !project))
     throw new AppError(400, 'Billing reference not found');
-  if (quotation && project && String(quotation.lead) !== String(project.lead))
+  if (
+    quotation &&
+    project &&
+    ((quotation.clientRef &&
+      project.clientRef &&
+      String(quotation.clientRef) !== String(project.clientRef)) ||
+      (quotation.lead &&
+        project.lead &&
+        String(quotation.lead) !== String(project.lead)))
+  )
     throw new AppError(
       400,
       'Quotation and project must belong to the same lead',

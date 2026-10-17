@@ -73,11 +73,22 @@ const schema = new mongoose.Schema(
     grandTotal: { type: Number, min: 0, required: true },
     status: {
       type: String,
-      enum: ['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled'],
+      enum: ['Draft', 'Sent', 'Partially Paid', 'Paid', 'Overdue', 'Cancelled'],
       default: 'Draft',
       index: true,
     },
     notes: { type: String, trim: true, maxlength: 1500 },
+    financeVersion: Number,
+    totalMinor: Number, paidMinor: { type: Number, min: 0 }, legacyPaidMinor: Number,
+    subtotalMinor: Number, discountMinor: Number, taxableMinor: Number, taxMinor: Number,
+    cgstMinor: Number, sgstMinor: Number, igstMinor: Number, otherChargesMinor: Number,
+    lineItems: { type: [mongoose.Schema.Types.Mixed], default: undefined },
+    currency: { type: String, enum: ['INR'], default: 'INR' }, taxType: String,
+    gstin: String, stateCode: String, service: String, reference: String, paymentTerms: String,
+    companySnapshot: mongoose.Schema.Types.Mixed,
+    recurringService: { type: mongoose.Schema.Types.ObjectId, ref: 'FinanceRecurring' }, billingPeriod: Date,
+    financeRequestKey: String, financeFingerprint: String,
+    revision: { type: Number, default: 0 }, sentAt: Date, cancelledAt: Date, cancellationReason: String,
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
@@ -96,5 +107,9 @@ const schema = new mongoose.Schema(
 schema.index({ deletedAt: 1, createdAt: -1 });
 schema.index({ 'client.company': 1, deletedAt: 1 });
 schema.index({ deletedAt: 1, invoiceDate: 1, status: 1 });
+schema.index({ createdBy: 1, deletedAt: 1, invoiceDate: 1 });
+schema.index({ clientRef: 1, status: 1, dueDate: 1 });
+schema.index({ financeRequestKey: 1 }, { unique: true, partialFilterExpression: { financeRequestKey: { $type: 'string' } } });
+schema.index({ recurringService: 1, billingPeriod: 1 }, { unique: true, partialFilterExpression: { recurringService: { $type: 'objectId' } } });
 
 export const Invoice = mongoose.model('Invoice', schema);

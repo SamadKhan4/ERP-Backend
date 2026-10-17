@@ -3,6 +3,8 @@ import { leadFields } from './Lead.js';
 const schema = new mongoose.Schema(
   {
     ...leadFields,
+    gstin: { type: String, trim: true, uppercase: true },
+    stateCode: { type: String, trim: true },
     clientId: { type: String, required: true, unique: true },
     originatingLead: {
       type: mongoose.Schema.Types.ObjectId,
