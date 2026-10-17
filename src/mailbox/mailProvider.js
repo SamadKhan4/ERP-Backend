@@ -68,7 +68,7 @@ export const safeFilename = (name) =>
     .join('')
     .replace(/[\\/<>:"|?*]/g, '_')
     .slice(0, 160) || 'attachment';
-export const providerError = (error) =>
+export const providerError = (error, protocol = 'Mailbox') =>
   new AppError(
     error?.authenticationFailed ||
       error?.code === 'EAUTH' ||
@@ -82,7 +82,7 @@ export const providerError = (error) =>
       /AUTHENTICATIONFAILED|Invalid credentials/i.test(
         error?.serverResponse || '',
       )
-      ? 'Mailbox authentication failed. Reconnect your work email.'
+      ? `${protocol} authentication rejected by Hostinger. Enter this mailbox's current email password (not your ERP login or Hostinger account password). Check that the same address and password work in Hostinger webmail.`
       : 'Hostinger is unavailable. Please retry later.',
   );
 export function imapClient(account, password) {
@@ -140,11 +140,13 @@ export async function testMailbox(account, password) {
   password = password ?? decryptMailSecret(account.encryptedPassword);
   const client = imapClient(account, password),
     smtp = smtpClient(account, password);
+  let protocol = 'IMAP';
   try {
     await client.connect();
+    protocol = 'SMTP';
     await smtp.verify();
   } catch (error) {
-    throw providerError(error);
+    throw providerError(error, protocol);
   } finally {
     try {
       if (client.usable) await client.logout();
