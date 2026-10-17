@@ -768,3 +768,42 @@ export async function grants(req, res) {
   });
   ok(res, { _id: grant._id });
 }
+export async function reconnect(req, res) {
+  const { password } = z
+    .object({ password: z.string().min(1).max(500) })
+    .strict()
+    .parse(req.body);
+  const row = await MailAccount.findById(id(req.params.id));
+  if (!row) throw new AppError(404, 'Mailbox not found');
+  if (row.type === 'PERSONAL') {
+    if (String(row.user) !== req.user.id || !hasMail(req, 'personal.connect'))
+      throw new AppError(403, 'Only the personal mailbox owner can reconnect');
+  } else if (!hasMail(req, 'admin.accounts.manage'))
+    throw new AppError(403, 'Shared mailbox reconnect requires administration');
+  if (
+    row.type === 'PERSONAL' &&
+    !(await User.exists({ _id: row.user, active: true }))
+  )
+    throw new AppError(403, 'Mailbox owner is inactive');
+  const encryptedPassword = encryptMailSecret(password);
+  await testMailbox(row, password);
+  const updated = await MailAccount.findOneAndUpdate(
+    { _id: row._id, revision: row.revision },
+    {
+      $set: {
+        encryptedPassword,
+        isActive: true,
+        syncStatus: 'PENDING',
+        syncError: '',
+        attempts: 0,
+        nextSyncAt: new Date(),
+        updatedBy: req.user._id,
+      },
+      $inc: { revision: 1 },
+    },
+    { new: true },
+  );
+  if (!updated) throw new AppError(409, 'Mailbox changed; refresh and retry');
+  await audit(req, 'reconnected', row);
+  ok(res, { reconnected: true });
+}

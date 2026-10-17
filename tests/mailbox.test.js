@@ -412,3 +412,41 @@ test('linking a personal message to a shared project never grants project collab
       .project.name,
   ).toBe(project.title);
 });
+test('reconnect verifies password for the existing mailbox without changing its type or ownership', async () => {
+  const path = `/accounts/${accounts.b._id}/reconnect`;
+  for (const actor of ['a', 'admin', 'super'])
+    expect(
+      (await call('post', path, actor, { password: 'NewPassword!' })).status,
+    ).toBe(403);
+  const result = await call('post', path, 'b', { password: 'NewPassword!' });
+  expect(result.status, result.text).toBe(200);
+  expect(result.text).not.toContain('NewPassword!');
+  const row = await mongoose
+    .model('MailAccount')
+    .findById(accounts.b._id)
+    .select('+encryptedPassword');
+  const { decryptMailSecret } = await import('../src/mailbox/mailCrypto.js');
+  expect(decryptMailSecret(row.encryptedPassword)).toBe('NewPassword!');
+  expect(String(row.user)).toBe(String(users.b._id));
+  expect(row.syncStatus).toBe('PENDING');
+  expect(
+    (
+      await call('post', `/accounts/${shared._id}/reconnect`, 'a', {
+        password: 'SharedNew!',
+      })
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await call('post', `/accounts/${shared._id}/reconnect`, 'admin', {
+        password: 'SharedNew!',
+      })
+    ).status,
+  ).toBe(200);
+  expect((await mongoose.model('MailAccount').findById(shared._id)).type).toBe(
+    'SHARED',
+  );
+  expect((await call('get', `/accounts/${shared._id}`, 'admin')).status).toBe(
+    403,
+  );
+});

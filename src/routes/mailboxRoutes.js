@@ -68,6 +68,7 @@ const upload = multer({
 mailboxRouter.get('/accounts', c.accounts);
 mailboxRouter.post('/accounts/connect', limit(5, 900000), c.connect);
 mailboxRouter.get('/accounts/:id', c.account);
+mailboxRouter.post('/accounts/:id/reconnect', limit(5, 900000), c.reconnect);
 mailboxRouter.post('/accounts/:id/test', limit(3), c.test);
 mailboxRouter.post('/accounts/:id/sync', limit(5), c.sync);
 mailboxRouter.delete('/accounts/:id/disconnect', c.disconnect);
