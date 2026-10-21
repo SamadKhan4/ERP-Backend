@@ -1,5 +1,6 @@
 import {
   invoiceIssuer,
+  invoiceCompanySnapshot,
   resolveInvoiceType,
 } from '../services/invoiceIssuerService.js';
 import mongoose from 'mongoose';
@@ -199,11 +200,7 @@ export async function createInvoice(req, res) {
     );
   const settings = await FinanceSettings.findById('finance').lean();
   const invoice = await Invoice.create({
-    companySnapshot: {
-      ...(settings || {}),
-      companyName: issuer.issuerName,
-      ...(issuer.invoiceType === 'NON_GST' ? { gstin: '' } : {}),
-    },
+    companySnapshot: invoiceCompanySnapshot(issuer.invoiceType, settings || {}),
     ...input,
     ...issuer,
     ...(await billingReferences(input)),
@@ -257,11 +254,10 @@ export async function updateInvoice(req, res) {
     );
   if (invoice.status === 'Draft') {
     const settings = await FinanceSettings.findById('finance').lean();
-    invoice.companySnapshot = {
-      ...(settings || invoice.companySnapshot || {}),
-      companyName: issuer.issuerName,
-      ...(issuer.invoiceType === 'NON_GST' ? { gstin: '' } : {}),
-    };
+    invoice.companySnapshot = invoiceCompanySnapshot(
+      issuer.invoiceType,
+      settings || invoice.companySnapshot || {},
+    );
   }
   Object.assign(invoice, input, issuer, totals(input.items, input.gstRate), {
     updatedBy: req.user.id,

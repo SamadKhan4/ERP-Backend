@@ -1,3 +1,4 @@
+import { invoiceCompanies } from '../services/invoiceIssuerService.js';
 import { mailboxRouter } from './mailboxRoutes.js';
 import { projectRouter } from './projectRoutes.js';
 import { Router } from 'express';
@@ -79,6 +80,7 @@ router.get('/quotations/:id/download', authenticate, authorize('quotations.read'
 router.get('/quotations/:id', authenticate, authorize('quotations.read'), quotations.getQuotation);
 router.put('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.updateQuotation);
 router.delete('/quotations/:id', authenticate, authorize('quotations.manage'), quotations.deleteQuotation);
+router.get('/invoices/issuers', authenticate, (_req, res) => res.json({ success: true, data: invoiceCompanies }));
 router.get('/invoices', authenticate, authorize('invoices.read'), invoices.listInvoices);
 router.post('/invoices', authenticate, authorize('invoices.manage'), invoices.createInvoice);
 router.get('/invoices/:id/download', authenticate, authorize('invoices.read'), invoices.downloadInvoice);

@@ -1,5 +1,6 @@
 import {
   invoiceIssuer,
+  invoiceCompanySnapshot,
   resolveInvoiceType,
 } from '../services/invoiceIssuerService.js';
 import mongoose from 'mongoose';
@@ -124,9 +125,16 @@ export async function findFinanceClient(req, value, session) {
 }
 export async function buildInvoiceFields(req, input, session) {
   const client = await findFinanceClient(req, input.client, session);
-  const settings = await FinanceSettings.findById('finance')
-    .session(session || null)
-    .lean();
+  const invoiceType = resolveInvoiceType(
+    input,
+    input.items.some((item) => minor(item.taxRate || '0') > 0),
+  );
+  const settings = invoiceCompanySnapshot(
+    invoiceType,
+    await FinanceSettings.findById('finance')
+      .session(session || null)
+      .lean(),
+  );
   if (
     !settings?.companyName ||
     !settings?.stateCode ||
@@ -138,10 +146,6 @@ export async function buildInvoiceFields(req, input, session) {
       409,
       'Complete Finance company / bank settings before creating an invoice',
     );
-  const invoiceType = resolveInvoiceType(
-    input,
-    input.items.some((item) => minor(item.taxRate || '0') > 0),
-  );
   const brand = invoiceIssuer(invoiceType);
   const taxApplies = invoiceType === 'GST';
   const invoiceItems = input.items.map((item) => ({
