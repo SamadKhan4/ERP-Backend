@@ -99,3 +99,15 @@ test('quotation CRUD calculates totals and produces the branded PDF', async () =
   expect(archived.status).toBe(200);
   expect((await request(app).get('/api/v1/quotations').auth(token, { type: 'bearer' })).body.data.items).toHaveLength(0);
 });
+
+
+test('quotation accepts blank or omitted email and rejects malformed email', async () => {
+  for (const email of ['', undefined]) {
+    const payload = { ...quotation, client: { ...quotation.client, email } };
+    const result = await request(app).post('/api/v1/quotations').set('Origin', origin).auth(token, { type: 'bearer' }).send(payload);
+    expect(result.status, JSON.stringify(result.body)).toBe(201);
+    expect(result.body.data.client.email).toBe('');
+  }
+  const invalid = await request(app).post('/api/v1/quotations').set('Origin', origin).auth(token, { type: 'bearer' }).send({ ...quotation, client: { ...quotation.client, email: 'invalid-email' } });
+  expect(invalid.status).toBe(400);
+});

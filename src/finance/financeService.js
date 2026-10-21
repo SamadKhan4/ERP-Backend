@@ -163,8 +163,6 @@ export async function buildInvoiceFields(req, input, session) {
       409,
       'Company GSTIN and client state code are required for GST invoices',
     );
-  if (!client.email)
-    throw new AppError(409, 'Add the client email before creating an invoice');
   const taxType = !taxApplies
     ? 'EXEMPT'
     : stateCode === settings.stateCode

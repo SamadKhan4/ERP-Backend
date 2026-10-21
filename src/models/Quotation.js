@@ -15,7 +15,7 @@ const partySchema = new mongoose.Schema(
     company: { type: String, trim: true, maxlength: 160, required: true },
     contactPerson: { type: String, trim: true, maxlength: 120, required: true },
     contactNumber: { type: String, trim: true, maxlength: 30, required: true },
-    email: { type: String, trim: true, lowercase: true, maxlength: 254, required: true },
+    email: { type: String, trim: true, lowercase: true, maxlength: 254, default: '' },
   },
   { _id: false },
 );

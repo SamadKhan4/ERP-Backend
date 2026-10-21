@@ -13,7 +13,7 @@ const party = z.object({
   company: z.string().trim().min(1).max(160),
   contactPerson: z.string().trim().min(1).max(120),
   contactNumber: z.string().trim().min(5).max(30),
-  email: z.string().trim().email().max(254),
+  email: z.string().trim().email().max(254).or(z.literal('')).optional(),
 });
 const bodySchema = z.object({
   services: z.array(z.enum(quotationServices)).min(1).max(quotationServices.length).optional(),

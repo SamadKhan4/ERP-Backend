@@ -11,7 +11,7 @@ const clientSchema = new mongoose.Schema(
       trim: true,
       lowercase: true,
       maxlength: 254,
-      required: true,
+      default: '',
     },
   },
   { _id: false },

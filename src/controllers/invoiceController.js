@@ -38,7 +38,7 @@ const bodySchema = z
       contactPerson: z.string().trim().min(1).max(120),
       address: z.string().trim().min(1).max(300),
       contactNumber: z.string().trim().min(5).max(30),
-      email: z.string().trim().email().max(254),
+      email: z.string().trim().email().max(254).or(z.literal('')).optional(),
     }),
     paymentDetails: z.object({
       bankName: z.string().trim().min(1).max(120),

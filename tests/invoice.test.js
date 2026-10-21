@@ -51,3 +51,15 @@ test('invoice CRUD calculates totals and produces the branded PDF', async () => 
   expect((await request(app).delete(`/api/v1/invoices/${id}`).set('Origin', origin).auth(token, { type: 'bearer' })).status).toBe(200);
   expect((await request(app).get('/api/v1/invoices').auth(token, { type: 'bearer' })).body.data.items).toHaveLength(0);
 });
+
+
+test('invoice accepts blank or omitted email and rejects malformed email', async () => {
+  for (const email of ['', undefined]) {
+    const payload = { ...invoice, client: { ...invoice.client, email } };
+    const result = await request(app).post('/api/v1/invoices').set('Origin', origin).auth(token, { type: 'bearer' }).send(payload);
+    expect(result.status, JSON.stringify(result.body)).toBe(201);
+    expect(result.body.data.client.email).toBe('');
+  }
+  const invalid = await request(app).post('/api/v1/invoices').set('Origin', origin).auth(token, { type: 'bearer' }).send({ ...invoice, client: { ...invoice.client, email: 'invalid-email' } });
+  expect(invalid.status).toBe(400);
+});
