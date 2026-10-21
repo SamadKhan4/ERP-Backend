@@ -78,6 +78,7 @@ const schema = new mongoose.Schema(
       index: true,
     },
     notes: { type: String, trim: true, maxlength: 1500 },
+    invoiceType:{type:String,enum:['GST','NON_GST']},issuerBrand:{type:String,enum:['ABCO','ADBORN']},issuerName:String,
     financeVersion: Number,
     totalMinor: Number, paidMinor: { type: Number, min: 0 }, legacyPaidMinor: Number,
     subtotalMinor: Number, discountMinor: Number, taxableMinor: Number, taxMinor: Number,

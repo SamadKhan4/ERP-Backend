@@ -1,12 +1,15 @@
+import { brandedInvoicePdf } from '../services/brandedInvoicePdfService.js';
 import PDFDocument from 'pdfkit';
 import { logoImage } from '../assets/pdfBrandAssets.js';
 import { FinanceSettings } from '../models/Finance.js';
 import { invoiceState } from './financeMoney.js';
 import { AppError } from '../utils/errors.js';
-const calendarDay = (value) => new Date(new Date(value).getTime() + 19800000).toISOString().slice(0, 10);
+const calendarDay = (value) =>
+  new Date(new Date(value).getTime() + 19800000).toISOString().slice(0, 10);
 const amount = (value) =>
   `INR ${(Number(value || 0) / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 export async function financeInvoicePdf(invoice) {
+  if (invoice.invoiceType) return brandedInvoicePdf(invoice);
   const company =
     invoice.companySnapshot ||
     (await FinanceSettings.findById('finance').lean());
@@ -38,12 +41,10 @@ export async function financeInvoicePdf(invoice) {
       .text(company.address || '', { width: 270 })
       .text(`GSTIN: ${company.gstin || 'Not registered'}`);
     doc
-      .text(
-        `Invoice date: ${calendarDay(invoice.invoiceDate)}`,
-        340,
-        100,
-        { width: 215, align: 'right' },
-      )
+      .text(`Invoice date: ${calendarDay(invoice.invoiceDate)}`, 340, 100, {
+        width: 215,
+        align: 'right',
+      })
       .text(`Due: ${calendarDay(invoice.dueDate)}`, {
         align: 'right',
       })

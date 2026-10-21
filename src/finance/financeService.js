@@ -1,3 +1,7 @@
+import {
+  invoiceIssuer,
+  resolveInvoiceType,
+} from '../services/invoiceIssuerService.js';
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { Invoice } from '../models/Invoice.js';
@@ -134,7 +138,21 @@ export async function buildInvoiceFields(req, input, session) {
       409,
       'Complete Finance company / bank settings before creating an invoice',
     );
-  const taxApplies = input.items.some((item) => minor(item.taxRate || '0') > 0);
+  const invoiceType = resolveInvoiceType(
+    input,
+    input.items.some((item) => minor(item.taxRate || '0') > 0),
+  );
+  const brand = invoiceIssuer(invoiceType);
+  const taxApplies = invoiceType === 'GST';
+  const invoiceItems = input.items.map((item) => ({
+    ...item,
+    taxRate: taxApplies ? item.taxRate : '0',
+  }));
+  if (
+    taxApplies &&
+    !invoiceItems.some((item) => minor(item.taxRate || '0') > 0)
+  )
+    throw new AppError(400, 'GST invoices require a positive GST rate');
   const stateCode = client.stateCode || client.gstin?.slice(0, 2);
   if (taxApplies && (!stateCode || !settings.gstin))
     throw new AppError(
@@ -148,7 +166,7 @@ export async function buildInvoiceFields(req, input, session) {
     : stateCode === settings.stateCode
       ? 'INTRA_STATE'
       : 'INTER_STATE';
-  const totals = invoiceAmounts(input.items, taxType, input.otherCharges);
+  const totals = invoiceAmounts(invoiceItems, taxType, input.otherCharges);
   const refs = {};
   if (input.quotation) {
     const quotation = await Quotation.findOne({
@@ -208,7 +226,12 @@ export async function buildInvoiceFields(req, input, session) {
       ifscCode: settings.ifscCode,
       branch: settings.branch || 'Not specified',
     },
-    companySnapshot: settings,
+    ...brand,
+    companySnapshot: {
+      ...settings,
+      companyName: brand.issuerName,
+      ...(!taxApplies ? { gstin: '' } : {}),
+    },
     taxType,
     gstin: client.gstin || '',
     stateCode,
@@ -253,7 +276,11 @@ export async function createFinanceInvoice(req, input) {
       [
         {
           ...fields,
-          invoiceNumber: await financeNumber('INV', session, fields.invoiceDate),
+          invoiceNumber: await financeNumber(
+            'INV',
+            session,
+            fields.invoiceDate,
+          ),
           paidMinor: 0,
           legacyPaidMinor: 0,
           financeRequestKey: identity.key,

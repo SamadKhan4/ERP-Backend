@@ -145,6 +145,9 @@ export function invoiceStages(
   return stages;
 }
 const invoiceProjection = {
+  invoiceType: 1,
+  issuerBrand: 1,
+  issuerName: 1,
   subtotalMinor: 1,
   taxableMinor: 1,
   taxMinor: 1,

@@ -7,7 +7,13 @@ const decimal = z
     (value) => /^\d{1,10}(\.\d{1,2})?$/.test(value),
     'Use a non-negative amount with at most 2 decimal places',
   );
-const date = z.preprocess((value) => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00+05:30` : value, z.coerce.date());
+const date = z.preprocess(
+  (value) =>
+    typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      ? `${value}T00:00:00+05:30`
+      : value,
+  z.coerce.date(),
+);
 export const methods = [
   'CASH',
   'UPI',
@@ -34,6 +40,7 @@ export const expenseCategories = [
 ];
 export const invoiceSchema = z
   .object({
+    invoiceType: z.enum(['GST', 'NON_GST']).optional(),
     client: id,
     quotation: id.optional(),
     project: id.optional(),
