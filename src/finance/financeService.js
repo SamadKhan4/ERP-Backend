@@ -124,7 +124,9 @@ export async function findFinanceClient(req, value, session) {
   return row;
 }
 export async function buildInvoiceFields(req, input, session) {
-  const client = await findFinanceClient(req, input.client, session);
+  const client = input.client
+    ? await findFinanceClient(req, input.client, session)
+    : {};
   const invoiceType = resolveInvoiceType(
     input,
     input.items.some((item) => minor(item.taxRate || '0') > 0),
@@ -135,34 +137,13 @@ export async function buildInvoiceFields(req, input, session) {
       .session(session || null)
       .lean(),
   );
-  if (
-    !settings?.companyName ||
-    !settings?.stateCode ||
-    !settings?.bankName ||
-    !settings?.accountNumber ||
-    !settings?.ifscCode
-  )
-    throw new AppError(
-      409,
-      'Complete Finance company / bank settings before creating an invoice',
-    );
   const brand = invoiceIssuer(invoiceType);
   const taxApplies = invoiceType === 'GST';
   const invoiceItems = input.items.map((item) => ({
     ...item,
     taxRate: taxApplies ? item.taxRate : '0',
   }));
-  if (
-    taxApplies &&
-    !invoiceItems.some((item) => minor(item.taxRate || '0') > 0)
-  )
-    throw new AppError(400, 'GST invoices require a positive GST rate');
   const stateCode = client.stateCode || client.gstin?.slice(0, 2);
-  if (taxApplies && (!stateCode || !settings.gstin))
-    throw new AppError(
-      409,
-      'Company GSTIN and client state code are required for GST invoices',
-    );
   const taxType = !taxApplies
     ? 'EXEMPT'
     : stateCode === settings.stateCode
@@ -213,20 +194,20 @@ export async function buildInvoiceFields(req, input, session) {
     clientRef: client._id,
     lead: refs.lead || client.originatingLead,
     client: {
-      company: client.companyName,
-      contactPerson: client.contactPerson || client.companyName,
+      company: client.companyName || '',
+      contactPerson: client.contactPerson || client.companyName || '',
       address:
         Object.values(client.address?.toObject?.() || client.address || {})
           .filter(Boolean)
-          .join(', ') || 'Not provided',
-      contactNumber: client.phone || 'Not provided',
+          .join(', ') || '',
+      contactNumber: client.phone || '',
       email: client.email,
     },
     paymentDetails: {
       bankName: settings.bankName,
       accountNumber: settings.accountNumber,
       ifscCode: settings.ifscCode,
-      branch: settings.branch || 'Not specified',
+      branch: settings.branch || '',
     },
     ...brand,
     companySnapshot: {
@@ -239,7 +220,7 @@ export async function buildInvoiceFields(req, input, session) {
     stateCode,
     service: input.service,
     invoiceDate: input.invoiceDate,
-    dueDate: input.dueDate,
+    dueDate: input.dueDate || input.invoiceDate,
     reference: input.reference,
     paymentTerms: input.paymentTerms,
     notes: input.notes,

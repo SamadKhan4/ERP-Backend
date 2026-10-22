@@ -31,30 +31,40 @@ const bodySchema = z
       .string()
       .regex(/^[a-f\d]{24}$/i)
       .optional(),
-    invoiceDate: z.coerce.date(),
-    dueDate: z.coerce.date(),
-    client: z.object({
-      company: z.string().trim().min(1).max(160),
-      contactPerson: z.string().trim().min(1).max(120),
-      address: z.string().trim().min(1).max(300),
-      contactNumber: z.string().trim().min(5).max(30),
-      email: z.string().trim().email().max(254).or(z.literal('')).optional(),
-    }),
-    paymentDetails: z.object({
-      bankName: z.string().trim().min(1).max(120),
-      accountNumber: z.string().trim().min(1).max(60),
-      ifscCode: z.string().trim().min(1).max(30),
-      branch: z.string().trim().min(1).max(120),
-    }),
+    invoiceDate: z.preprocess(
+      (value) => (value === '' || value == null ? new Date() : value),
+      z.coerce.date(),
+    ),
+    dueDate: z.preprocess(
+      (value) => (value === '' || value == null ? undefined : value),
+      z.coerce.date().optional(),
+    ),
+    client: z
+      .object({
+        company: z.string().trim().max(160).default(''),
+        contactPerson: z.string().trim().max(120).default(''),
+        address: z.string().trim().max(300).default(''),
+        contactNumber: z.string().trim().max(30).default(''),
+        email: z.string().trim().email().max(254).or(z.literal('')).optional(),
+      })
+      .default({}),
+    paymentDetails: z
+      .object({
+        bankName: z.string().trim().max(120).default(''),
+        accountNumber: z.string().trim().max(60).default(''),
+        ifscCode: z.string().trim().max(30).default(''),
+        branch: z.string().trim().max(120).default(''),
+      })
+      .default({}),
     items: z
       .array(
         z.object({
-          title: z.string().trim().min(1).max(300),
-          amount: z.coerce.number().min(0).max(100000000),
+          title: z.string().trim().max(300).default(''),
+          amount: z.coerce.number().min(0).max(100000000).default(0),
         }),
       )
-      .min(1)
-      .max(6),
+      .max(6)
+      .default([]),
     gstRate: z.coerce.number().min(0).max(100).default(18),
     status: z
       .enum(['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled'])
@@ -62,7 +72,7 @@ const bodySchema = z
     notes: z.string().trim().max(1500).optional(),
   })
   .strict()
-  .refine((data) => data.dueDate >= data.invoiceDate, {
+  .refine((data) => !data.dueDate || data.dueDate >= data.invoiceDate, {
     path: ['dueDate'],
     message: 'Due date must be on or after invoice date',
   });
@@ -189,10 +199,9 @@ export async function getInvoice(req, res) {
 }
 export async function createInvoice(req, res) {
   const input = bodySchema.parse(req.body);
+  input.dueDate ??= input.invoiceDate;
   const issuer = invoiceIssuer(resolveInvoiceType(input, input.gstRate > 0));
   if (issuer.invoiceType === 'NON_GST') input.gstRate = 0;
-  else if (input.gstRate <= 0)
-    throw new AppError(400, 'GST invoices require a positive GST rate');
   if (input.status === 'Paid')
     throw new AppError(
       400,
@@ -218,10 +227,9 @@ export async function createInvoice(req, res) {
 }
 export async function updateInvoice(req, res) {
   const input = bodySchema.parse(req.body);
+  input.dueDate ??= input.invoiceDate;
   const issuer = invoiceIssuer(resolveInvoiceType(input, input.gstRate > 0));
   if (issuer.invoiceType === 'NON_GST') input.gstRate = 0;
-  else if (input.gstRate <= 0)
-    throw new AppError(400, 'GST invoices require a positive GST rate');
   const invoice = await findInvoice(req.params.id);
   if (input.status === 'Paid')
     throw new AppError(

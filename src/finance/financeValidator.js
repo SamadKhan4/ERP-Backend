@@ -41,31 +41,55 @@ export const expenseCategories = [
 export const invoiceSchema = z
   .object({
     invoiceType: z.enum(['GST', 'NON_GST']).optional(),
-    client: id,
+    client: z.preprocess(
+      (value) => (value === '' || value == null ? undefined : value),
+      id.optional(),
+    ),
     quotation: id.optional(),
     project: id.optional(),
     service: z.string().max(60).optional(),
-    invoiceDate: date,
-    dueDate: date,
+    invoiceDate: z.preprocess(
+      (value) => (value === '' || value == null ? new Date() : value),
+      date,
+    ),
+    dueDate: z.preprocess(
+      (value) => (value === '' || value == null ? undefined : value),
+      date.optional(),
+    ),
     items: z
       .array(
         z
           .object({
-            description: z.string().trim().min(1).max(300),
-            quantity: z
-              .union([z.string(), z.number()])
-              .transform(String)
-              .refine((value) => /^\d{1,7}(\.\d{1,4})?$/.test(value))
-              .default('1'),
-            rate: decimal,
-            discount: decimal.default('0'),
-            taxRate: decimal.default('0'),
+            description: z.string().trim().max(300).default(''),
+            quantity: z.preprocess(
+              (value) => (value === '' ? undefined : value),
+              z
+                .union([z.string(), z.number()])
+                .transform(String)
+                .refine((value) => /^\d{1,7}(\.\d{1,4})?$/.test(value))
+                .default('1'),
+            ),
+            rate: z.preprocess(
+              (value) => (value === '' ? undefined : value),
+              decimal.default('0'),
+            ),
+            discount: z.preprocess(
+              (value) => (value === '' ? undefined : value),
+              decimal.default('0'),
+            ),
+            taxRate: z.preprocess(
+              (value) => (value === '' ? undefined : value),
+              decimal.default('0'),
+            ),
           })
           .strict(),
       )
-      .min(1)
-      .max(6),
-    otherCharges: decimal.default('0'),
+      .max(6)
+      .default([]),
+    otherCharges: z.preprocess(
+      (value) => (value === '' ? undefined : value),
+      decimal.default('0'),
+    ),
     status: z.enum(['DRAFT', 'SENT']).default('DRAFT'),
     reference: z.string().trim().max(120).optional(),
     paymentTerms: z.string().trim().max(500).optional(),
@@ -74,7 +98,7 @@ export const invoiceSchema = z
   })
   .strict()
   .refine(
-    (value) => value.dueDate >= value.invoiceDate,
+    (value) => !value.dueDate || value.dueDate >= value.invoiceDate,
     'Due date must be on or after invoice date',
   );
 export const paymentSchema = z

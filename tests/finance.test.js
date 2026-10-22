@@ -42,31 +42,27 @@ beforeAll(async () => {
   );
   const { issueSession } = await import('../src/services/tokenService.js');
   for (const role of ['super_admin', 'admin', 'hr', 'employee']) {
-    users[role] = await mongoose
-      .model('User')
-      .create({
-        name: role,
-        email: `${role}@finance.test`,
-        role,
-        passwordHash: 'unused',
-      });
+    users[role] = await mongoose.model('User').create({
+      name: role,
+      email: `${role}@finance.test`,
+      role,
+      passwordHash: 'unused',
+    });
     tokens[role] = (await issueSession(users[role])).accessToken;
   }
-  client = await mongoose
-    .model('Client')
-    .create({
-      clientId: 'FIN-C1',
-      companyName: 'Finance Client',
-      contactPerson: 'Client Person',
-      email: 'client@finance.test',
-      leadSource: 'Website',
-      originatingLead: new mongoose.Types.ObjectId(),
-      createdBy: users.admin._id,
-      assignedTo: users.admin._id,
-      stateCode: '27',
-      gstin: '27ABCDE1234F1Z5',
-      address: { city: 'Nagpur' },
-    });
+  client = await mongoose.model('Client').create({
+    clientId: 'FIN-C1',
+    companyName: 'Finance Client',
+    contactPerson: 'Client Person',
+    email: 'client@finance.test',
+    leadSource: 'Website',
+    originatingLead: new mongoose.Types.ObjectId(),
+    createdBy: users.admin._id,
+    assignedTo: users.admin._id,
+    stateCode: '27',
+    gstin: '27ABCDE1234F1Z5',
+    address: { city: 'Nagpur' },
+  });
 });
 afterAll(async () => {
   await mongoose.disconnect();
@@ -294,23 +290,170 @@ test('recurring billing is period-idempotent, cancellation and exports remain pr
 });
 test('custom finance scopes, immutable settlements and role grants prevent bypasses', async () => {
   const Role = mongoose.model('Role');
-  await Role.create({ name: 'employee', label: 'Scoped finance', financePermissions: ['finance.invoices.view','finance.invoices.export','finance.payments.view','finance.reports.view','finance.reports.export','finance.scope.own'] });
-  expect((await call('get', `/invoices/${invoice._id}`, 'employee')).status).toBe(404);
-  const own = await call('get', '/invoices', 'employee'); expect(own.body.data.items).toHaveLength(0);
-  expect((await call('get', '/reports/invoices?format=csv', 'employee')).text).not.toContain(invoice.invoiceNumber);
-  const legacyWrite = await request(app).put(`/api/v1/invoices/${invoice._id}`).set('Origin',origin).auth(tokens.admin,{type:'bearer'}).send({ invoiceDate:'2026-01-01', dueDate:'2026-01-10', client:{company:'Finance Client',contactPerson:'Client',address:'Nagpur',contactNumber:'12345678',email:'client@finance.test'}, paymentDetails:{bankName:'Bank',accountNumber:'123',ifscCode:'TEST',branch:'Nagpur'}, items:[{title:'Changed',amount:1}],gstRate:0,status:'Sent' });
+  await Role.create({
+    name: 'employee',
+    label: 'Scoped finance',
+    financePermissions: [
+      'finance.invoices.view',
+      'finance.invoices.export',
+      'finance.payments.view',
+      'finance.reports.view',
+      'finance.reports.export',
+      'finance.scope.own',
+    ],
+  });
+  expect(
+    (await call('get', `/invoices/${invoice._id}`, 'employee')).status,
+  ).toBe(404);
+  const own = await call('get', '/invoices', 'employee');
+  expect(own.body.data.items).toHaveLength(0);
+  expect(
+    (await call('get', '/reports/invoices?format=csv', 'employee')).text,
+  ).not.toContain(invoice.invoiceNumber);
+  const legacyWrite = await request(app)
+    .put(`/api/v1/invoices/${invoice._id}`)
+    .set('Origin', origin)
+    .auth(tokens.admin, { type: 'bearer' })
+    .send({
+      invoiceDate: '2026-01-01',
+      dueDate: '2026-01-10',
+      client: {
+        company: 'Finance Client',
+        contactPerson: 'Client',
+        address: 'Nagpur',
+        contactNumber: '12345678',
+        email: 'client@finance.test',
+      },
+      paymentDetails: {
+        bankName: 'Bank',
+        accountNumber: '123',
+        ifscCode: 'TEST',
+        branch: 'Nagpur',
+      },
+      items: [{ title: 'Changed', amount: 1 }],
+      gstRate: 0,
+      status: 'Sent',
+    });
   expect(legacyWrite.status).toBe(409);
-  expect((await call('patch','/access/super_admin','super_admin',{permissions:[]})).status).toBe(400);
-  await Role.deleteOne({name:'employee'});
+  expect(
+    (
+      await call('patch', '/access/super_admin', 'super_admin', {
+        permissions: [],
+      })
+    ).status,
+  ).toBe(400);
+  await Role.deleteOne({ name: 'employee' });
 });
 test('recurring edits and IST fiscal/day arithmetic work without revision conflicts', async () => {
-  const body = { client: client.id, service:'web', description:'Monthly edits', startDate:'2026-01-01', nextBillingDate:'2026-01-31', frequency:'MONTHLY', amount:'100',taxRate:'18' };
-  const created = await call('post','/recurring','admin',body); expect(created.status).toBe(200);
-  const edited = await call('patch',`/recurring/${created.body.data._id}`,'admin',{...body,description:'Updated plan',revision:created.body.data.revision}); expect(edited.status,JSON.stringify(edited.body)).toBe(200);
+  const body = {
+    client: client.id,
+    service: 'web',
+    description: 'Monthly edits',
+    startDate: '2026-01-01',
+    nextBillingDate: '2026-01-31',
+    frequency: 'MONTHLY',
+    amount: '100',
+    taxRate: '18',
+  };
+  const created = await call('post', '/recurring', 'admin', body);
+  expect(created.status).toBe(200);
+  const edited = await call(
+    'patch',
+    `/recurring/${created.body.data._id}`,
+    'admin',
+    {
+      ...body,
+      description: 'Updated plan',
+      revision: created.body.data.revision,
+    },
+  );
+  expect(edited.status, JSON.stringify(edited.body)).toBe(200);
   const { nextBillingDate } = await import('../src/finance/financeService.js');
-  expect(nextBillingDate(new Date('2026-01-31T00:00:00+05:30'),'MONTHLY').toISOString()).toBe('2026-02-27T18:30:00.000Z');
+  expect(
+    nextBillingDate(
+      new Date('2026-01-31T00:00:00+05:30'),
+      'MONTHLY',
+    ).toISOString(),
+  ).toBe('2026-02-27T18:30:00.000Z');
   const { invoiceAmounts } = await import('../src/finance/financeMoney.js');
-  expect(invoiceAmounts([{description:'A',quantity:'1',rate:'0.10',taxRate:'0'},{description:'B',quantity:'1',rate:'0.20',taxRate:'0'}],'EXEMPT').totalMinor).toBe(30);
-  expect(()=>invoiceAmounts([{description:'Bad',quantity:'1',rate:'0.001',taxRate:'0'}],'EXEMPT')).toThrow();
+  expect(
+    invoiceAmounts(
+      [
+        { description: 'A', quantity: '1', rate: '0.10', taxRate: '0' },
+        { description: 'B', quantity: '1', rate: '0.20', taxRate: '0' },
+      ],
+      'EXEMPT',
+    ).totalMinor,
+  ).toBe(30);
+  expect(() =>
+    invoiceAmounts(
+      [{ description: 'Bad', quantity: '1', rate: '0.001', taxRate: '0' }],
+      'EXEMPT',
+    ),
+  ).toThrow();
 });
-test('invoice issuer selection enforces GST vs non-GST and stores stable branding',async()=>{const body={client:client.id,invoiceDate:'2026-10-19',dueDate:'2026-10-26',items:[{description:'Issuer test',quantity:'1',rate:'1000',taxRate:'18'}],status:'DRAFT'};const taxed=await call('post','/invoices','admin',{...body,invoiceType:'GST'},'issuer_gst_invoice_test_001');expect(taxed.status,JSON.stringify(taxed.body)).toBe(201);expect(taxed.body.data.issuerBrand).toBe('ABCO');expect(taxed.body.data.companySnapshot.companyName).toBe('ABCO Computers');expect(taxed.body.data.companySnapshot.gstin).toBe('27AAXCA5017F1ZI');expect(taxed.body.data.companySnapshot.stateCode).toBe('27');expect(taxed.body.data.taxMinor).toBe(18000);const plain=await call('post','/invoices','admin',{...body,invoiceType:'NON_GST'},'issuer_plain_invoice_test_002');expect(plain.status,JSON.stringify(plain.body)).toBe(201);expect(plain.body.data.issuerBrand).toBe('ADBORN');expect(plain.body.data.taxMinor).toBe(0);expect(plain.body.data.totalMinor).toBe(100000);expect(plain.body.data.companySnapshot.gstin).toBe('');expect(plain.body.data.lineItems[0].taxRate).toBe('0');const {financeInvoicePdf}=await import('../src/finance/financePdfService.js');expect((await financeInvoicePdf(taxed.body.data)).subarray(0,5).toString()).toBe('%PDF-');expect((await financeInvoicePdf(plain.body.data)).subarray(0,5).toString()).toBe('%PDF-');});
+test('invoice issuer selection enforces GST vs non-GST and stores stable branding', async () => {
+  const body = {
+    client: client.id,
+    invoiceDate: '2026-10-19',
+    dueDate: '2026-10-26',
+    items: [
+      {
+        description: 'Issuer test',
+        quantity: '1',
+        rate: '1000',
+        taxRate: '18',
+      },
+    ],
+    status: 'DRAFT',
+  };
+  const taxed = await call(
+    'post',
+    '/invoices',
+    'admin',
+    { ...body, invoiceType: 'GST' },
+    'issuer_gst_invoice_test_001',
+  );
+  expect(taxed.status, JSON.stringify(taxed.body)).toBe(201);
+  expect(taxed.body.data.issuerBrand).toBe('ABCO');
+  expect(taxed.body.data.companySnapshot.companyName).toBe('ABCO Computers');
+  expect(taxed.body.data.companySnapshot.gstin).toBe('27AAXCA5017F1ZI');
+  expect(taxed.body.data.companySnapshot.stateCode).toBe('27');
+  expect(taxed.body.data.taxMinor).toBe(18000);
+  const plain = await call(
+    'post',
+    '/invoices',
+    'admin',
+    { ...body, invoiceType: 'NON_GST' },
+    'issuer_plain_invoice_test_002',
+  );
+  expect(plain.status, JSON.stringify(plain.body)).toBe(201);
+  expect(plain.body.data.issuerBrand).toBe('ADBORN');
+  expect(plain.body.data.taxMinor).toBe(0);
+  expect(plain.body.data.totalMinor).toBe(100000);
+  expect(plain.body.data.companySnapshot.gstin).toBe('');
+  expect(plain.body.data.lineItems[0].taxRate).toBe('0');
+  const { financeInvoicePdf } =
+    await import('../src/finance/financePdfService.js');
+  expect(
+    (await financeInvoicePdf(taxed.body.data)).subarray(0, 5).toString(),
+  ).toBe('%PDF-');
+  expect(
+    (await financeInvoicePdf(plain.body.data)).subarray(0, 5).toString(),
+  ).toBe('%PDF-');
+});
+
+test.each(['GST', 'NON_GST'])(
+  'finance invoice fields are optional for %s',
+  async (invoiceType) => {
+    const result = await call(
+      'post',
+      '/invoices',
+      'admin',
+      { invoiceType },
+      `optional_invoice_${invoiceType}`,
+    );
+    expect(result.status, JSON.stringify(result.body)).toBe(201);
+    expect(result.body.data.grandTotal).toBe(0);
+  },
+);
