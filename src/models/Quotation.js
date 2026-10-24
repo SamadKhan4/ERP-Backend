@@ -85,8 +85,8 @@ const schema = new mongoose.Schema(
     items: {
       type: [itemSchema],
       validate: [
-        (items) => items.length > 0 && items.length <= 20 * 6,
-        'Quotation requires 1-6 items per service',
+        (items) => items.length > 0 && items.length <= 20 * 100,
+        'Quotation requires 1-100 items per service',
       ],
     },
     terms: {

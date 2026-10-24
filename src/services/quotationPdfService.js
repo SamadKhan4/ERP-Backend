@@ -143,7 +143,15 @@ function tableHeight(doc, service, items) {
   );
 }
 
-function drawServiceTable(doc, service, items, headingY, total) {
+function drawServiceTable(
+  doc,
+  service,
+  items,
+  headingY,
+  total,
+  offset = 0,
+  final = true,
+) {
   doc
     .fillColor(ink)
     .font('Helvetica-Bold')
@@ -168,12 +176,13 @@ function drawServiceTable(doc, service, items, headingY, total) {
     if (index % 2) doc.rect(20, y, 522, height).fill(pale);
     doc
       .fillColor('#1593d0')
-      .text(String(index + 1).padStart(2, '0'), 30, y + 9);
+      .text(String(offset + index + 1).padStart(2, '0'), 30, y + 9);
     doc.fillColor(ink).text(item.description, 88, y + 9, { width: 330 });
     if (item.amount !== null && item.amount !== undefined && item.amount !== '')
       drawMoney(doc, item.amount, 430, y + 10, 88, 9);
     y += height;
   });
+  if (!final) return y + 20;
   doc.rect(20, y, 522, 34).fill(navy);
   doc
     .fillColor('#fff')
@@ -204,18 +213,37 @@ export function streamQuotationPdf(res, quotation) {
     const items = quotation.items.filter(
       (item) => (item.service || selectedServices[0]) === service,
     );
-    const height = tableHeight(measureDoc, service, items);
-    if (y + height > 758) {
-      page = { tables: [], terms: [], start: 146 };
-      pages.push(page);
-      y = page.start;
-    }
     const total =
       quotation.serviceTotals?.find((entry) => entry.service === service)
         ?.total ??
       items.reduce((sum, item) => sum + Number(item.amount || 0), 0);
-    page.tables.push({ service, items, total, y });
-    y += height;
+    let offset = 0;
+    while (offset < items.length) {
+      let count = 0;
+      while (
+        offset + count < items.length &&
+        y +
+          tableHeight(
+            measureDoc,
+            service,
+            items.slice(offset, offset + count + 1),
+          ) <=
+          758
+      )
+        count++;
+      if (!count) {
+        page = { tables: [], terms: [], start: 146 };
+        pages.push(page);
+        y = page.start;
+        continue;
+      }
+      const chunk = items.slice(offset, offset + count);
+      const final = offset + count === items.length;
+      const height = tableHeight(measureDoc, service, chunk);
+      page.tables.push({ service, items: chunk, total, y, offset, final });
+      y += height;
+      offset += count;
+    }
   }
   for (const term of quotation.terms || []) {
     measureDoc.font('Helvetica').fontSize(8);
@@ -243,7 +271,15 @@ export function streamQuotationPdf(res, quotation) {
     doc.addPage({ size: [562, 842], margin: 0 });
     drawPageChrome(doc, quotation, index + 1, pages.length);
     for (const table of page.tables)
-      drawServiceTable(doc, table.service, table.items, table.y, table.total);
+      drawServiceTable(
+        doc,
+        table.service,
+        table.items,
+        table.y,
+        table.total,
+        table.offset,
+        table.final,
+      );
     if (page.terms.length) {
       doc
         .fillColor('#168fd0')

@@ -47,7 +47,7 @@ const bodySchema = z
         }),
       )
       .min(1)
-      .max(20 * 6),
+      .max(20 * 100),
     terms: z.array(z.string().trim().min(1).max(500)).max(10).default([]),
     gstRate: z.coerce.number().min(0).max(100).default(18),
     status: z
@@ -93,10 +93,10 @@ const normalizeInput = (input) => {
   }));
   for (const service of services) {
     const count = items.filter((item) => item.service === service).length;
-    if (!count || count > 6)
+    if (!count || count > 100)
       throw new AppError(
         400,
-        'Each selected service requires 1-6 price breakdown rows',
+        'Each selected service requires 1-100 price breakdown rows',
       );
   }
   if (items.some((item) => !services.includes(item.service)))
@@ -266,13 +266,11 @@ export async function createQuotation(req, res) {
       await lead.save({ session });
       return record;
     });
-    return res
-      .status(201)
-      .json({
-        success: true,
-        message: 'Quotation created successfully',
-        data: quotation,
-      });
+    return res.status(201).json({
+      success: true,
+      message: 'Quotation created successfully',
+      data: quotation,
+    });
   }
   const quotation = await Quotation.create({
     ...input,
@@ -285,13 +283,11 @@ export async function createQuotation(req, res) {
     updatedBy: req.user.id,
   });
   await audit(req, 'quotation.created', quotation);
-  res
-    .status(201)
-    .json({
-      success: true,
-      message: 'Quotation created successfully',
-      data: quotation,
-    });
+  res.status(201).json({
+    success: true,
+    message: 'Quotation created successfully',
+    data: quotation,
+  });
 }
 
 export async function updateQuotation(req, res) {

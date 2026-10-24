@@ -141,6 +141,12 @@ test('custom services retain manual totals independently of optional row amounts
       { service: 'Launch support', description: 'Launch review', amount: 0 },
     ],
   };
+  payload.items.unshift(
+    ...Array.from({ length: 12 }, (_, index) => ({
+      service: 'Brand strategy',
+      description: `Extra row ${index + 1}`,
+    })),
+  );
   const created = await request(app)
     .post('/api/v1/quotations')
     .set('Origin', origin)
@@ -149,7 +155,8 @@ test('custom services retain manual totals independently of optional row amounts
   expect(created.status, JSON.stringify(created.body)).toBe(201);
   expect(created.body.data.serviceTotals).toEqual(payload.serviceTotals);
   expect(created.body.data.items[0]).not.toHaveProperty('amount');
-  expect(created.body.data.items[1].amount).toBe(0);
+  expect(created.body.data.items).toHaveLength(14);
+  expect(created.body.data.items.at(-1).amount).toBe(0);
   const updated = await request(app)
     .put(`/api/v1/quotations/${created.body.data._id}`)
     .set('Origin', origin)
