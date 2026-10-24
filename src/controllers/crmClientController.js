@@ -141,7 +141,7 @@ export async function clientDetail(req, res) {
           deletedAt: null,
         })
           .select(
-            'quotationNumber title status subtotal gstRate grandTotal lead',
+            'quotationNumber title status subtotal gstRate grandTotal lead services service items serviceTotals',
           )
           .limit(50)
           .lean()
@@ -187,7 +187,7 @@ export async function leadQuotations(req, res) {
   const [items, total] = await Promise.all([
     Quotation.find(filter)
       .select(
-        'quotationNumber title status grandTotal clientRef lead createdAt services',
+        'quotationNumber title status grandTotal clientRef lead createdAt services service items serviceTotals',
       )
       .sort({ createdAt: -1 })
       .skip((page - 1) * 20)

@@ -97,17 +97,89 @@ test('quotation CRUD calculates totals and produces the branded PDF', async () =
     .set('Origin', origin)
     .auth(token, { type: 'bearer' });
   expect(archived.status).toBe(200);
-  expect((await request(app).get('/api/v1/quotations').auth(token, { type: 'bearer' })).body.data.items).toHaveLength(0);
+  expect(
+    (
+      await request(app)
+        .get('/api/v1/quotations')
+        .auth(token, { type: 'bearer' })
+    ).body.data.items,
+  ).toHaveLength(0);
 });
-
 
 test('quotation accepts blank or omitted email and rejects malformed email', async () => {
   for (const email of ['', undefined]) {
     const payload = { ...quotation, client: { ...quotation.client, email } };
-    const result = await request(app).post('/api/v1/quotations').set('Origin', origin).auth(token, { type: 'bearer' }).send(payload);
+    const result = await request(app)
+      .post('/api/v1/quotations')
+      .set('Origin', origin)
+      .auth(token, { type: 'bearer' })
+      .send(payload);
     expect(result.status, JSON.stringify(result.body)).toBe(201);
     expect(result.body.data.client.email).toBe('');
   }
-  const invalid = await request(app).post('/api/v1/quotations').set('Origin', origin).auth(token, { type: 'bearer' }).send({ ...quotation, client: { ...quotation.client, email: 'invalid-email' } });
+  const invalid = await request(app)
+    .post('/api/v1/quotations')
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send({
+      ...quotation,
+      client: { ...quotation.client, email: 'invalid-email' },
+    });
   expect(invalid.status).toBe(400);
+});
+
+test('custom services retain manual totals independently of optional row amounts', async () => {
+  const payload = {
+    ...quotation,
+    services: ['Brand strategy', 'Launch support'],
+    serviceTotals: [
+      { service: 'Brand strategy', total: 12500 },
+      { service: 'Launch support', total: 0 },
+    ],
+    items: [
+      { service: 'Brand strategy', description: 'Discovery workshop' },
+      { service: 'Launch support', description: 'Launch review', amount: 0 },
+    ],
+  };
+  const created = await request(app)
+    .post('/api/v1/quotations')
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send(payload);
+  expect(created.status, JSON.stringify(created.body)).toBe(201);
+  expect(created.body.data.serviceTotals).toEqual(payload.serviceTotals);
+  expect(created.body.data.items[0]).not.toHaveProperty('amount');
+  expect(created.body.data.items[1].amount).toBe(0);
+  const updated = await request(app)
+    .put(`/api/v1/quotations/${created.body.data._id}`)
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send({
+      ...payload,
+      services: ['Campaign planning'],
+      items: [
+        { service: 'Campaign planning', description: 'Planning', amount: 10 },
+      ],
+      serviceTotals: [{ service: 'Campaign planning', total: 9000 }],
+    });
+  expect(updated.status, JSON.stringify(updated.body)).toBe(200);
+  expect(updated.body.data.services).toEqual(['Campaign planning']);
+  expect(updated.body.data.serviceTotals).toEqual([
+    { service: 'Campaign planning', total: 9000 },
+  ]);
+  for (const serviceTotals of [
+    [{ service: 'Brand strategy', total: -1 }],
+    [{ service: 'Brand strategy', total: 1 }],
+    [
+      { service: 'Unknown service', total: 1 },
+      { service: 'Launch support', total: 2 },
+    ],
+  ]) {
+    const invalid = await request(app)
+      .post('/api/v1/quotations')
+      .set('Origin', origin)
+      .auth(token, { type: 'bearer' })
+      .send({ ...payload, serviceTotals });
+    expect(invalid.status).toBe(400);
+  }
 });
