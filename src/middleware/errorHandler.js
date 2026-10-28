@@ -14,6 +14,14 @@ export function errorHandler(error, req, res, next) {
           : error.name === 'ZodError'
             ? 'Invalid request'
             : error.message,
+      ...(error.name === 'ZodError'
+        ? {
+            details: error.issues.map((issue) => ({
+              field: issue.path.join('.'),
+              message: issue.message,
+            })),
+          }
+        : {}),
     },
   });
 }

@@ -130,6 +130,40 @@ test('invoice accepts blank or omitted email and rejects malformed email', async
       client: { ...invoice.client, email: 'invalid-email' },
     });
   expect(invalid.status).toBe(400);
+  expect(invalid.body.error.details).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        field: 'client.email',
+        message: expect.any(String),
+      }),
+    ]),
+  );
+});
+
+test('invoice update reports invalid fields and requires Finance for Paid status', async () => {
+  const created = await request(app)
+    .post('/api/v1/invoices')
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send(invoice);
+  expect(created.status).toBe(201);
+  const update = (payload) =>
+    request(app)
+      .put(`/api/v1/invoices/${created.body.data._id}`)
+      .set('Origin', origin)
+      .auth(token, { type: 'bearer' })
+      .send(payload);
+  const invalid = await update({ ...invoice, dueDate: '2026-10-01' });
+  expect(invalid.status).toBe(400);
+  expect(invalid.body.error.details).toContainEqual({
+    field: 'dueDate',
+    message: 'Due date must be on or after invoice date',
+  });
+  const paid = await update({ ...invoice, status: 'Paid' });
+  expect(paid.status).toBe(400);
+  expect(paid.body.error.message).toBe(
+    'Record a payment in Finance to settle the invoice',
+  );
 });
 
 test.each(['GST', 'NON_GST'])(
