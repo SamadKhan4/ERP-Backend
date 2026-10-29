@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
 import request from 'supertest';
@@ -28,10 +28,11 @@ const invoice = {
   ],
   gstRate: 18,
   status: 'Draft',
+  paymentTerms: 'Payment is due by the invoice due date.',
 };
 
 beforeAll(async () => {
-  database = await MongoMemoryServer.create();
+  database = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
   Object.assign(process.env, {
     NODE_ENV: 'test',
     MONGO_URI: database.getUri(),
@@ -71,6 +72,7 @@ test('invoice CRUD calculates totals and produces the branded PDF', async () => 
     .send(invoice);
   expect(created.status).toBe(201);
   expect(created.body.data.invoiceNumber).toMatch(/^ADB-INV-\d{4}-0001$/);
+  expect(created.body.data.paymentTerms).toBe(invoice.paymentTerms);
   expect(created.body.data.subtotal).toBe(45000);
   expect(created.body.data.gstAmount).toBe(8100);
   expect(created.body.data.grandTotal).toBe(53100);
@@ -88,6 +90,7 @@ test('invoice CRUD calculates totals and produces the branded PDF', async () => 
     .auth(token, { type: 'bearer' })
     .send({ ...invoice, status: 'Sent', gstRate: 0 });
   expect(updated.status).toBe(200);
+  expect(updated.body.data.paymentTerms).toBe(invoice.paymentTerms);
   expect(updated.body.data.grandTotal).toBe(45000);
 
   const pdf = await request(app)
@@ -140,7 +143,7 @@ test('invoice accepts blank or omitted email and rejects malformed email', async
   );
 });
 
-test('invoice update reports invalid fields and requires Finance for Paid status', async () => {
+test('invoice update validates fields and atomically records Paid in Finance', async () => {
   const created = await request(app)
     .post('/api/v1/invoices')
     .set('Origin', origin)
@@ -160,10 +163,26 @@ test('invoice update reports invalid fields and requires Finance for Paid status
     message: 'Due date must be on or after invoice date',
   });
   const paid = await update({ ...invoice, status: 'Paid' });
-  expect(paid.status).toBe(400);
-  expect(paid.body.error.message).toBe(
-    'Record a payment in Finance to settle the invoice',
-  );
+  expect(paid.status, JSON.stringify(paid.body)).toBe(200);
+  expect(paid.body.data.status).toBe('Paid');
+  expect(paid.body.data.totalMinor).toBe(5310000);
+  expect(paid.body.data.paidMinor).toBe(5310000);
+  const { FinancePayment } = await import('../src/models/Finance.js');
+  const receipts = await FinancePayment.find({
+    invoice: created.body.data._id,
+  });
+  expect(receipts).toHaveLength(1);
+  expect(receipts[0].amountMinor).toBe(5310000);
+  expect(receipts[0].status).toBe('POSTED');
+  const retry = await update({ ...invoice, status: 'Paid' });
+  expect(retry.status, JSON.stringify(retry.body)).toBe(200);
+  expect(
+    await FinancePayment.countDocuments({ invoice: created.body.data._id }),
+  ).toBe(1);
+  const changed = await update({ ...invoice, status: 'Sent' });
+  expect(changed.status).toBe(409);
+  const { invoiceState } = await import('../src/finance/financeMoney.js');
+  expect(invoiceState(paid.body.data).balanceMinor).toBe(0);
 });
 
 test.each(['GST', 'NON_GST'])(
@@ -201,3 +220,58 @@ test.each(['GST', 'NON_GST'])(
     }
   },
 );
+
+test('concurrent Paid saves post one receipt and preserve the settled amount', async () => {
+  const created = await request(app)
+    .post('/api/v1/invoices')
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send(invoice);
+  const id = created.body.data._id;
+  const save = () =>
+    request(app)
+      .put(`/api/v1/invoices/${id}`)
+      .set('Origin', origin)
+      .auth(token, { type: 'bearer' })
+      .send({ ...invoice, status: 'Paid' });
+  const results = await Promise.all([save(), save()]);
+  for (const result of results)
+    expect(result.status, JSON.stringify(result.body)).toBe(200);
+  const { FinancePayment } = await import('../src/models/Finance.js');
+  expect(await FinancePayment.countDocuments({ invoice: id })).toBe(1);
+  const changed = await request(app)
+    .put(`/api/v1/invoices/${id}`)
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send({
+      ...invoice,
+      status: 'Paid',
+      items: [{ title: 'Changed', amount: 1 }],
+    });
+  expect(changed.status).toBe(409);
+  const stored = await request(app)
+    .get(`/api/v1/invoices/${id}`)
+    .auth(token, { type: 'bearer' });
+  expect(stored.body.data.paidMinor).toBe(5310000);
+});
+
+test.each([
+  { status: 'Cancelled' },
+  { invoiceDate: '2099-01-01', dueDate: '2099-01-02' },
+])('invalid Paid transitions leave no payment behind: %j', async (fields) => {
+  const created = await request(app)
+    .post('/api/v1/invoices')
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send({ ...invoice, ...fields });
+  expect(created.status).toBe(201);
+  const id = created.body.data._id;
+  const result = await request(app)
+    .put(`/api/v1/invoices/${id}`)
+    .set('Origin', origin)
+    .auth(token, { type: 'bearer' })
+    .send({ ...invoice, ...fields, status: 'Paid' });
+  expect([400, 409]).toContain(result.status);
+  const { FinancePayment } = await import('../src/models/Finance.js');
+  expect(await FinancePayment.countDocuments({ invoice: id })).toBe(0);
+});

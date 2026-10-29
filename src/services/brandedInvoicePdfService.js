@@ -245,8 +245,21 @@ export function brandedInvoicePdf(invoice) {
     text('info@adbornsolutions.com', 132, 826, 159, 7.3, false, '#fff', 12);
     text('adbornsolutions.com', 290, 826, 120, 7.3, false, '#fff', 12);
     text('Nagpur, Maharashtra, India', 417, 826, 143, 7.3, false, '#fff', 12);
+    const terms = invoice.paymentTerms ?? company.terms ?? '';
+    doc.font('Helvetica').fontSize(8);
+    const termsHeight = terms ? doc.heightOfString(terms, { width: 282 }) : 0;
+    const termsY = Math.max(y + 12, 646);
+    const termsOnFirstPage = terms && termsY + 20 + termsHeight <= 738;
+    if (termsOnFirstPage) {
+      text('TERMS & CONDITIONS', 20, termsY, 282, 9, true, dark, 16);
+      doc
+        .font('Helvetica')
+        .fontSize(8)
+        .fillColor('#24364b')
+        .text(terms, 20, termsY + 20, { width: 282 });
+    }
     const details = [
-      invoice.paymentTerms || company.terms,
+      !termsOnFirstPage && terms ? `TERMS & CONDITIONS\n${terms}` : '',
       invoice.notes,
       invoice.reference ? `Reference: ${invoice.reference}` : '',
       invoice.financeVersion

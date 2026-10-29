@@ -266,6 +266,20 @@ export function streamInvoicePdf(res, invoice) {
   doc.text('info@adbornsolutions.com', 135, 826, { lineBreak: false });
   doc.text('adbornsolutions.com', 300, 826, { lineBreak: false });
   doc.text('Nagpur, Maharashtra, India', 420, 826, { lineBreak: false });
+  const terms = invoice.paymentTerms ?? invoice.companySnapshot?.terms ?? '';
+  if (terms) {
+    doc.addPage({ margin: 38 });
+    doc
+      .fillColor(navy)
+      .font('Helvetica-Bold')
+      .fontSize(14)
+      .text('TERMS & CONDITIONS', 38, 38, { width: 486 });
+    doc
+      .fillColor(ink)
+      .font('Helvetica')
+      .fontSize(10)
+      .text(terms, 38, 70, { width: 486 });
+  }
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader(
     'Content-Disposition',

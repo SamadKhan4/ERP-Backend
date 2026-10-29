@@ -13,6 +13,12 @@ import { streamInvoicePdf } from '../services/invoicePdfService.js';
 import { billingReferences } from '../services/billingReferenceService.js';
 import { FinanceSettings, FinancePayment } from '../models/Finance.js';
 import { invoiceAmounts } from '../finance/financeMoney.js';
+import { legacyMinor } from '../finance/financeMoney.js';
+import {
+  financeTransaction,
+  financeNumber,
+  financeAudit,
+} from '../finance/financeService.js';
 
 const bodySchema = z
   .object({
@@ -69,6 +75,7 @@ const bodySchema = z
     status: z
       .enum(['Draft', 'Sent', 'Paid', 'Overdue', 'Cancelled'])
       .default('Draft'),
+    paymentTerms: z.string().trim().max(500).optional(),
     notes: z.string().trim().max(1500).optional(),
   })
   .strict()
@@ -109,9 +116,11 @@ const ensureId = (id) => {
   if (!mongoose.isValidObjectId(id))
     throw new AppError(400, 'Invalid invoice identifier');
 };
-async function findInvoice(id) {
+async function findInvoice(id, session = null) {
   ensureId(id);
-  const invoice = await Invoice.findOne({ _id: id, deletedAt: null });
+  const invoice = await Invoice.findOne({ _id: id, deletedAt: null }).session(
+    session,
+  );
   if (!invoice) throw new AppError(404, 'Invoice not found');
   return invoice;
 }
@@ -230,48 +239,109 @@ export async function updateInvoice(req, res) {
   input.dueDate ??= input.invoiceDate;
   const issuer = invoiceIssuer(resolveInvoiceType(input, input.gstRate > 0));
   if (issuer.invoiceType === 'NON_GST') input.gstRate = 0;
-  const invoice = await findInvoice(req.params.id);
-  if (input.status === 'Paid')
-    throw new AppError(
-      400,
-      'Record a payment in Finance to settle the invoice',
+  const invoice = await financeTransaction(async (session) => {
+    const invoice = await findInvoice(req.params.id, session);
+    // A retried save of an unchanged paid invoice must not post a second receipt.
+    if (invoice.status === 'Paid' && input.status === 'Paid') {
+      const stored = invoice.toObject();
+      const current = bodySchema.parse(
+        Object.fromEntries(Object.keys(input).map((key) => [key, stored[key]])),
+      );
+      if (JSON.stringify(current) === JSON.stringify(input)) return invoice;
+    }
+    if (
+      invoice.financeVersion ||
+      invoice.paidMinor ||
+      invoice.status === 'Paid' ||
+      (await FinancePayment.exists({ invoice: invoice._id }).session(session))
+    )
+      throw new AppError(
+        409,
+        'Use Finance Management for invoices with financial history',
+      );
+    if (input.status === 'Paid' && invoice.status === 'Cancelled')
+      throw new AppError(409, 'Cancelled invoices cannot be marked paid');
+    if (input.status === 'Paid' && input.invoiceDate > new Date())
+      throw new AppError(400, 'A future-dated invoice cannot be marked paid');
+    if (
+      (input.quotation && String(invoice.quotation) !== input.quotation) ||
+      (input.project && String(invoice.project) !== input.project)
+    )
+      throw new AppError(409, 'Existing billing references cannot be changed');
+    if (
+      invoice.invoiceType &&
+      invoice.status !== 'Draft' &&
+      invoice.invoiceType !== issuer.invoiceType
+    )
+      throw new AppError(
+        409,
+        'Issued invoice branding cannot change; create a new invoice',
+      );
+    if (invoice.status === 'Draft') {
+      const settings = await FinanceSettings.findById('finance')
+        .session(session)
+        .lean();
+      invoice.companySnapshot = invoiceCompanySnapshot(
+        issuer.invoiceType,
+        settings || invoice.companySnapshot || {},
+      );
+    }
+    Object.assign(invoice, input, issuer, totals(input.items, input.gstRate), {
+      updatedBy: req.user.id,
+    });
+    invoice.revision = (invoice.revision || 0) + 1;
+    if (input.status === 'Paid') {
+      const amountMinor = legacyMinor(invoice.grandTotal);
+      invoice.totalMinor = amountMinor;
+      invoice.paidMinor = amountMinor;
+      invoice.legacyPaidMinor = 0;
+      if (amountMinor > 0) {
+        const paymentDate = new Date();
+        const [payment] = await FinancePayment.create(
+          [
+            {
+              invoice: invoice._id,
+              client: invoice.clientRef,
+              paymentDate,
+              amountMinor,
+              method: 'OTHER',
+              notes:
+                'Full payment recorded by marking the invoice Paid in the invoice editor.',
+              paymentId: await financeNumber('PAY', session, paymentDate),
+              idempotencyKey: `invoice-editor-paid:${invoice._id}:${invoice.revision}`,
+              recordedBy: req.user.id,
+            },
+          ],
+          { session },
+        );
+        await financeAudit(
+          req,
+          'payment_received',
+          invoice,
+          {
+            payment: payment._id,
+            amountMinor,
+            paidMinor: amountMinor,
+            balanceMinor: 0,
+            source: 'invoice_editor',
+          },
+          session,
+        );
+      }
+    }
+    await invoice.save({ session });
+    await financeAudit(
+      req,
+      'invoice_updated',
+      invoice,
+      {
+        invoiceNumber: invoice.invoiceNumber,
+        status: invoice.status,
+      },
+      session,
     );
-  if (
-    invoice.financeVersion ||
-    invoice.paidMinor ||
-    invoice.status === 'Paid' ||
-    (await FinancePayment.exists({ invoice: invoice._id }))
-  )
-    throw new AppError(
-      409,
-      'Use Finance Management for invoices with financial history',
-    );
-  if (
-    (input.quotation && String(invoice.quotation) !== input.quotation) ||
-    (input.project && String(invoice.project) !== input.project)
-  )
-    throw new AppError(409, 'Existing billing references cannot be changed');
-  if (
-    invoice.invoiceType &&
-    invoice.status !== 'Draft' &&
-    invoice.invoiceType !== issuer.invoiceType
-  )
-    throw new AppError(
-      409,
-      'Issued invoice branding cannot change; create a new invoice',
-    );
-  if (invoice.status === 'Draft') {
-    const settings = await FinanceSettings.findById('finance').lean();
-    invoice.companySnapshot = invoiceCompanySnapshot(
-      issuer.invoiceType,
-      settings || invoice.companySnapshot || {},
-    );
-  }
-  Object.assign(invoice, input, issuer, totals(input.items, input.gstRate), {
-    updatedBy: req.user.id,
+    return invoice;
   });
-  await invoice.save();
-  await audit(req, 'invoice.updated', invoice);
   res.json({
     success: true,
     message: 'Invoice updated successfully',
